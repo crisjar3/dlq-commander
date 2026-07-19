@@ -4,16 +4,16 @@
 
 | Capa | Comando | Criterio de aprobación |
 | --- | --- | --- |
-| Tipos | `npm run typecheck` | Main, preload, shared y renderer compilan en strict |
-| Lint | `npm run lint` | Sin errores; renderer no importa Node/Electron |
-| Unitarias | `npm test` | Schemas, capabilities, vault y adapters aislados pasan |
-| Integración | `npm run test:integration` | RabbitMQ y Kafka conectan, inspeccionan y entregan al destino real |
-| E2E demo | `npm run test:e2e` | Electron abre, renderer aislado, requeue y auditoría pasan |
-| E2E brokers | `npm run test:e2e:brokers` | La UI guarda perfiles y main conecta con ambos brokers reales |
-| Build | `npm run build` | Artefactos main/preload/renderer se generan |
-| Packaging | `npm run package` | Directorio instalable se construye con el runtime SQLite incluido en Electron |
+| Tipos | `pnpm typecheck` | Main, preload, shared y renderer compilan en strict |
+| Lint | `pnpm lint` | Sin errores; renderer no importa Node/Electron |
+| Unitarias | `pnpm test` | Schemas, capabilities, vault y adapters aislados pasan |
+| Integración | `pnpm test:integration` | RabbitMQ y Kafka conectan, inspeccionan y entregan al destino real |
+| E2E demo | `pnpm test:e2e` | Electron abre, renderer aislado, requeue y auditoría pasan |
+| E2E brokers | `pnpm test:e2e:brokers` | La UI guarda perfiles y main conecta con ambos brokers reales |
+| Build | `pnpm build` | Artefactos main/preload/renderer se generan |
+| Packaging | `pnpm package` | Directorio instalable se construye con el runtime SQLite incluido en Electron |
 
-Las pruebas externas requieren primero `npm run lab:up` y `npm run lab:seed`. Cada test genera identificadores únicos para no depender del orden ni del contenido previamente cargado.
+Las pruebas externas requieren primero `pnpm lab:up` y `pnpm lab:seed`. Cada test genera identificadores únicos para no depender del orden ni del contenido previamente cargado.
 
 ## Integración RabbitMQ local
 

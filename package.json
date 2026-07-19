@@ -5,22 +5,27 @@
   "main": "./out/main/index.js",
   "author": "DLQCommander contributors",
   "license": "MIT",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22.0.0 <23",
+    "pnpm": "11.9.0"
+  },
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "npm run typecheck && electron-vite build",
+    "build": "pnpm typecheck && electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:e2e": "npm run build && playwright test",
-    "test:e2e:brokers": "npm run build && playwright test --config playwright.brokers.config.ts",
+    "test:e2e": "pnpm build && playwright test",
+    "test:e2e:brokers": "pnpm build && playwright test --config playwright.brokers.config.ts",
     "lab:up": "docker compose up -d --wait",
     "lab:seed": "node scripts/seed-rabbitmq.mjs && node scripts/seed-kafka.mjs",
     "lab:down": "docker compose down",
-    "package": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder",
+    "package": "pnpm build && electron-builder --dir",
+    "dist": "pnpm build && electron-builder",
     "postinstall": "electron --version"
   },
   "dependencies": {

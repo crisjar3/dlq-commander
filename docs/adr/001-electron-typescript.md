@@ -21,4 +21,4 @@ El instalador es más pesado y los módulos nativos deben reconstruirse por vers
 
 ## Validación
 
-`npm run build`, `npm run test:e2e` y `npm run package` deben pasar en Windows.
+`pnpm build`, `pnpm test:e2e` y `pnpm package` deben pasar en Windows.

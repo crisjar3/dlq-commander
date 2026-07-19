@@ -19,15 +19,15 @@ SQS, purge, editar-y-reenviar, auto-update y firma pertenecen a fases siguientes
 ## Requisitos
 
 - Node.js 22.
-- npm 11 o compatible.
+- pnpm 11.9.0, fijado mediante el campo `packageManager`.
 - Windows 10/11 para validar `safeStorage` y el instalador actual.
 - Docker Desktop para el laboratorio RabbitMQ + Kafka.
 
 ## Arranque rápido
 
 ```powershell
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 La aplicación crea un perfil `Demo local` en el primer arranque. Ese perfil permite recorrer dashboard, inspector, requeue y auditoría sin credenciales externas.
@@ -37,9 +37,9 @@ La aplicación crea un perfil `Demo local` en el primer arranque. Ese perfil per
 Levantar RabbitMQ y Kafka, esperar sus healthchecks y cargar mensajes de ejemplo:
 
 ```powershell
-npm run lab:up
-npm run lab:seed
-npm run dev
+pnpm lab:up
+pnpm lab:seed
+pnpm dev
 ```
 
 ### RabbitMQ
@@ -82,26 +82,26 @@ El requeue de Kafka publica una copia en `orders.events`; el registro original p
 Para detener y eliminar los contenedores y volúmenes del laboratorio:
 
 ```powershell
-npm run lab:down
+pnpm lab:down
 ```
 
 ## Validación
 
 ```powershell
-npm run typecheck
-npm run lint
-npm test
-npm run test:integration
-npm run test:e2e
-npm run test:e2e:brokers
-npm run package
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm test:integration
+pnpm test:e2e
+pnpm test:e2e:brokers
+pnpm package
 ```
 
 - `test:integration` prueba ambos adapters contra los contenedores reales y verifica la entrega en sus destinos.
 - `test:e2e` abre Electron con el broker demo, valida el aislamiento del renderer y comprueba requeue + auditoría.
 - `test:e2e:brokers` crea perfiles RabbitMQ/Kafka desde el renderer y recorre preload, IPC, persistencia, conexión y discovery reales.
 
-Los comandos de integración requieren haber ejecutado `npm run lab:up` y `npm run lab:seed`.
+Los comandos de integración requieren haber ejecutado `pnpm lab:up` y `pnpm lab:seed`.
 
 ## Datos locales
 
