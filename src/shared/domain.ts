@@ -65,6 +65,21 @@ export const resourceScopeSchema = z.discriminatedUnion('kind', [
 ])
 export type ResourceScope = z.infer<typeof resourceScopeSchema>
 
+export const resourceCollectionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('queues') }).strict(),
+  z.object({ kind: z.literal('topics') }).strict(),
+  z.object({ kind: z.literal('subscriptions'), topicName: z.string().trim().min(1) }).strict()
+])
+export type ResourceCollection = z.infer<typeof resourceCollectionSchema>
+
+export const resourcePageRequestSchema = z.object({
+  collection: resourceCollectionSchema,
+  cursor: z.string().min(1).max(8_192).nullable().default(null),
+  pageSize: z.coerce.number().int().min(10).max(100).default(50),
+  force: z.boolean().default(false)
+}).strict()
+export type ResourcePageRequest = z.output<typeof resourcePageRequestSchema>
+
 const rootResourceScopeSchema = z.object({ kind: z.literal('root') }).strict().default({ kind: 'root' })
 const azureResourceScopeSchema = resourceScopeSchema.default({ kind: 'root' })
 
@@ -109,6 +124,53 @@ export const brokerDiscoveryInputSchema = z.discriminatedUnion('brokerType', [
 export type BrokerDiscoveryInput = z.input<typeof brokerDiscoveryInputSchema>
 export type ValidatedBrokerDiscoveryInput = z.output<typeof brokerDiscoveryInputSchema>
 
+export const brokerDiscoveryPageInputSchema = z.object({
+  connection: brokerDiscoveryInputSchema,
+  request: resourcePageRequestSchema
+}).strict().superRefine(({ connection, request }, context) => {
+  if (connection.brokerType === 'rabbitmq' && request.collection.kind !== 'queues') {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['request', 'collection'], message: 'RabbitMQ only supports queue collections' })
+  }
+  if (connection.brokerType === 'kafka' && request.collection.kind !== 'topics') {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['request', 'collection'], message: 'Kafka only supports topic collections' })
+  }
+  if (request.collection.kind === 'subscriptions' && connection.brokerType !== 'azure-service-bus') {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['request', 'collection'], message: 'Only Azure Service Bus supports subscriptions' })
+  }
+  if (connection.scope.kind === 'topic' && (
+    request.collection.kind !== 'subscriptions' || request.collection.topicName !== connection.scope.topicName
+  )) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['request', 'collection'], message: 'The collection must match the Azure topic scope' })
+  }
+})
+export type BrokerDiscoveryPageInput = z.input<typeof brokerDiscoveryPageInputSchema>
+export type ValidatedBrokerDiscoveryPageInput = z.output<typeof brokerDiscoveryPageInputSchema>
+
+export const resourceMetricsSchema = z.object({
+  totalMessages: z.number().int().nonnegative().nullable(),
+  activeMessages: z.number().int().nonnegative().nullable(),
+  readyMessages: z.number().int().nonnegative().nullable(),
+  unacknowledgedMessages: z.number().int().nonnegative().nullable(),
+  deadLetterMessages: z.number().int().nonnegative().nullable(),
+  scheduledMessages: z.number().int().nonnegative().nullable(),
+  sizeBytes: z.number().int().nonnegative().nullable(),
+  subscriptionCount: z.number().int().nonnegative().nullable()
+}).strict()
+export type ResourceMetrics = z.infer<typeof resourceMetricsSchema>
+
+export function emptyResourceMetrics(): ResourceMetrics {
+  return {
+    totalMessages: null,
+    activeMessages: null,
+    readyMessages: null,
+    unacknowledgedMessages: null,
+    deadLetterMessages: null,
+    scheduledMessages: null,
+    sizeBytes: null,
+    subscriptionCount: null
+  }
+}
+
 export const discoveredEntitySchema = z.object({
   key: z.string().min(1),
   name: z.string().min(1),
@@ -118,7 +180,9 @@ export const discoveredEntitySchema = z.object({
   childCount: z.number().int().nonnegative().nullable(),
   canInspect: z.boolean(),
   canTarget: z.boolean(),
-  suggestedSource: z.boolean()
+  suggestedSource: z.boolean(),
+  status: z.string().trim().min(1).nullable(),
+  metrics: resourceMetricsSchema
 }).superRefine((entity, context) => {
   if (entity.kind === 'subscription' && entity.parent === null) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['parent'], message: 'A subscription requires its parent topic' })
@@ -128,6 +192,14 @@ export const discoveredEntitySchema = z.object({
   }
 })
 export type DiscoveredEntity = z.infer<typeof discoveredEntitySchema>
+
+export const resourcePageResultSchema = z.object({
+  entities: z.array(discoveredEntitySchema),
+  nextCursor: z.string().min(1).max(8_192).nullable(),
+  totalCount: z.number().int().nonnegative().nullable(),
+  latencyMs: z.number().int().nonnegative()
+}).strict()
+export type ResourcePageResult = z.infer<typeof resourcePageResultSchema>
 
 export const discoveryResultSchema = z.object({
   entities: z.array(discoveredEntitySchema),

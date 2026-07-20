@@ -39,6 +39,7 @@ describe('BrokerDiscoveryService integration', () => {
     })
 
     expect(result.entities.length).toBeGreaterThan(0)
-    expect(result.entities.every((entity) => entity.kind === 'queue')).toBe(true)
+    expect(result.entities.some((entity) => entity.kind === 'queue')).toBe(true)
+    expect(result.entities.every((entity) => entity.kind === 'queue' || entity.kind === 'topic')).toBe(true)
   })
 })

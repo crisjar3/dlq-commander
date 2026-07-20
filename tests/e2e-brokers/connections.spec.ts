@@ -39,6 +39,22 @@ test('tests RabbitMQ and Kafka profiles through the real Electron IPC boundary',
         secret: {}
       })
     ])
+    const rabbitPageOne = await api.invoke('discoverResourcePage', {
+      connection: {
+        brokerType: 'rabbitmq',
+        configuration: { host: 'localhost', port: 5672, vhost: '/', tls: false },
+        secret: { username: 'dlqcommander', password: 'dlqcommander' }
+      },
+      request: { collection: { kind: 'queues' }, pageSize: 50 }
+    })
+    const rabbitPageTwo = await api.invoke('discoverResourcePage', {
+      connection: {
+        brokerType: 'rabbitmq',
+        configuration: { host: 'localhost', port: 5672, vhost: '/', tls: false },
+        secret: { username: 'dlqcommander', password: 'dlqcommander' }
+      },
+      request: { collection: { kind: 'queues' }, pageSize: 50, cursor: rabbitPageOne.nextCursor }
+    })
     const rabbit = await api.invoke('saveProfile', {
       name: 'RabbitMQ Compose',
       brokerType: 'rabbitmq',
@@ -67,11 +83,15 @@ test('tests RabbitMQ and Kafka profiles through the real Electron IPC boundary',
       api.invoke('listSources', { profileId: rabbit.id }),
       api.invoke('listSources', { profileId: kafka.id })
     ])
-    return { rabbitDiscovery, kafkaDiscovery, rabbitTest, kafkaTest, rabbitSources, kafkaSources }
+    return { rabbitDiscovery, kafkaDiscovery, rabbitPageOne, rabbitPageTwo, rabbitTest, kafkaTest, rabbitSources, kafkaSources }
   })
 
   expect(result.rabbitDiscovery.entities.map((entity) => entity.name)).toEqual(expect.arrayContaining(['orders', 'orders.dlq']))
   expect(result.kafkaDiscovery.entities.map((entity) => entity.name)).toEqual(expect.arrayContaining(['orders.events', 'orders.events.dlt']))
+  expect(result.rabbitPageOne.entities).toHaveLength(50)
+  expect(result.rabbitPageOne.nextCursor).not.toBeNull()
+  expect(result.rabbitPageOne.totalCount).toBeGreaterThan(100)
+  expect(result.rabbitPageTwo.entities).toHaveLength(50)
   expect(result.rabbitTest).toMatchObject({ ok: true, message: 'Conexion y DLQ verificadas' })
   expect(result.kafkaTest).toMatchObject({ ok: true, message: 'Broker y topics verificados' })
   expect(result.rabbitSources[0]).toMatchObject({ brokerType: 'rabbitmq', name: 'orders.dlq' })
@@ -92,7 +112,9 @@ test('creates an explorable RabbitMQ namespace from the modal', async () => {
   await expect(page.getByText('La conexión cambió')).toBeVisible()
   await page.getByLabel('Virtual host').fill('/')
   await page.getByRole('button', { name: 'Buscar nuevamente' }).click()
+  await page.getByPlaceholder('Buscar queue o topic').fill('orders.dlq')
   await expect(page.getByRole('option', { name: /orders\.dlq/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Guardar y explorar' })).toBeEnabled()
   await page.getByRole('button', { name: 'Guardar y explorar' }).click()
   await expect(page.getByRole('heading', { name: 'Explorador de recursos' })).toBeVisible()
 

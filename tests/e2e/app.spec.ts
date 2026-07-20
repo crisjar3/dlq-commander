@@ -12,7 +12,7 @@ test.beforeEach(async () => {
   electronApp = await electron.launch({
     args: ['.'],
     cwd: process.cwd(),
-    env: { ...process.env, DLQ_COMMANDER_E2E_USER_DATA: userDataPath }
+    env: { ...process.env, DLQ_COMMANDER_E2E_USER_DATA: userDataPath, DLQ_COMMANDER_DEMO_RESOURCE_COUNT: '2000' }
   })
   page = await electronApp.firstWindow()
   await page.waitForSelector('[data-testid="app-shell"]')
@@ -90,11 +90,27 @@ test('searches resources with the keyboard on a compact dark viewport', async ()
 
   const search = page.getByRole('combobox', { name: 'Buscar recursos' })
   await search.fill('payments.dlq')
-  await expect(page.getByText(/1 de \d+/)).toBeVisible()
+  await expect(page.getByText(/1 coincidencia en/)).toBeVisible()
   await search.press('Enter')
   await expect(page.getByRole('heading', { name: 'payments.dlq' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Volver a recursos' }).click()
   await expect(page.getByRole('heading', { name: 'Explorador de recursos' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+})
+
+test('paginates and searches a 2,000-resource namespace without rendering the full catalog', async () => {
+  await page.getByText('Demo local').click()
+  const search = page.getByRole('combobox', { name: 'Buscar recursos' })
+  await expect(page.getByText(/2.?000 recursos/)).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('Página 1 de 40')).toBeVisible()
+  expect(await page.locator('.resource-list-row').count()).toBeLessThan(50)
+
+  await search.press('PageDown')
+  await expect(page.getByText('Página 2 de 40')).toBeVisible()
+  await search.fill('servce region 0184')
+  await expect(page.getByText(/coincidencia.*2.?000 recursos cargados/)).toBeVisible()
+  await expect(search).toHaveAttribute('aria-activedescendant', /0184/)
+  await search.press('Enter')
+  await expect(page.getByRole('heading', { name: 'service-region-0184.dlq' })).toBeVisible()
 })

@@ -3,11 +3,14 @@ import {
   auditEntrySchema,
   brokerResourceRefSchema,
   brokerDiscoveryInputSchema,
+  brokerDiscoveryPageInputSchema,
   connectionProfileInputSchema,
   connectionProfileSchema,
   discoveryResultSchema,
   messagePageSchema,
   operationJobSchema,
+  resourcePageRequestSchema,
+  resourcePageResultSchema,
   resourceScopeSchema,
   sourceSummarySchema,
   targetResourceRefSchema
@@ -44,6 +47,11 @@ export const ipcContract = {
     input: brokerDiscoveryInputSchema,
     output: discoveryResultSchema
   },
+  discoverResourcePage: {
+    channel: 'connections:discover-page',
+    input: brokerDiscoveryPageInputSchema,
+    output: resourcePageResultSchema
+  },
   listResources: {
     channel: 'resources:list',
     input: z.object({
@@ -52,6 +60,11 @@ export const ipcContract = {
       force: z.boolean().default(false)
     }),
     output: discoveryResultSchema
+  },
+  listResourcePage: {
+    channel: 'resources:list-page',
+    input: resourcePageRequestSchema.extend({ profileId: z.string().min(1) }),
+    output: resourcePageResultSchema
   },
   getDestinationPreference: {
     channel: 'resources:destination-preference',

@@ -6,6 +6,7 @@ import { AlertCircle, ArrowLeft, Braces, CheckCircle2, ChevronRight, FileJson2, 
 import { resourceDisplayName, resourceKey, type ConnectionProfile, type NormalizedMessage, type OperationJob, type SourceSummary, type TargetResourceRef } from '@shared/domain'
 import { fixedProfileTarget, targetRefFromEntity } from '@shared/resources'
 import { ResourceExplorerList } from '../components/ResourceExplorerList'
+import { useResourceCatalog } from '../hooks/useResourceCatalog'
 import { formatDate, readableError, invoke } from '../lib/api'
 
 interface InspectorViewProps {
@@ -34,10 +35,15 @@ export function InspectorView({ source, profile, activeJob, onBack }: InspectorV
     queryFn: () => invoke('listMessages', { profileId: profile.id, source: source.resource, limit: messageLimit }),
     placeholderData: (previous) => previous
   })
-  const resourcesQuery = useQuery({
-    queryKey: ['resources', profile.id, 'root', 'requeue'],
+  const namespaceMode = profile.brokerType === 'demo' || profile.configuration['profileMode'] === 'namespace'
+  const queuesRequired = profile.brokerType !== 'kafka'
+  const topicsRequired = profile.brokerType === 'azure-service-bus' || profile.brokerType === 'kafka'
+  const queueDestinations = useResourceCatalog(profile.id, { kind: 'queues' }, confirmOpen && namespaceMode && queuesRequired)
+  const topicDestinations = useResourceCatalog(profile.id, { kind: 'topics' }, confirmOpen && namespaceMode && topicsRequired)
+  const legacyResourcesQuery = useQuery({
+    queryKey: ['resources', profile.id, 'root', 'requeue', 'fixed'],
     queryFn: () => invoke('listResources', { profileId: profile.id, scope: { kind: 'root' }, force: false }),
-    enabled: confirmOpen,
+    enabled: confirmOpen && !namespaceMode,
     staleTime: 60_000
   })
   const preferenceQuery = useQuery({
@@ -45,7 +51,20 @@ export function InspectorView({ source, profile, activeJob, onBack }: InspectorV
     queryFn: () => invoke('getDestinationPreference', { profileId: profile.id, source: source.resource }),
     enabled: confirmOpen
   })
-  const destinationEntities = useMemo(() => (resourcesQuery.data?.entities ?? []).filter((entity) => entity.canTarget && entity.kind !== 'subscription'), [resourcesQuery.data])
+  const destinationEntities = useMemo(() => {
+    const sourceEntities = namespaceMode
+      ? [...queueDestinations.entities, ...topicDestinations.entities]
+      : legacyResourcesQuery.data?.entities ?? []
+    return [...new Map(sourceEntities.filter((entity) => entity.canTarget && entity.kind !== 'subscription').map((entity) => [entity.key, entity])).values()]
+  }, [legacyResourcesQuery.data, namespaceMode, queueDestinations.entities, topicDestinations.entities])
+  const destinationsLoading = namespaceMode
+    ? (queuesRequired ? queueDestinations.isInitialLoading : false) || (topicsRequired ? topicDestinations.isInitialLoading : false)
+    : legacyResourcesQuery.isLoading
+  const destinationsLoadingMore = namespaceMode && ((queuesRequired ? queueDestinations.isLoadingMore : false) || (topicsRequired ? topicDestinations.isLoadingMore : false))
+  const destinationsComplete = !namespaceMode || (!queuesRequired || queueDestinations.isComplete) && (!topicsRequired || topicDestinations.isComplete)
+  const destinationsError = namespaceMode
+    ? (queuesRequired ? queueDestinations.error : null) ?? (topicsRequired ? topicDestinations.error : null)
+    : legacyResourcesQuery.error
   const filteredMessages = useMemo(() => {
     const query = filter.trim().toLowerCase()
     if (!query) return messagesQuery.data?.items ?? []
@@ -103,9 +122,9 @@ export function InspectorView({ source, profile, activeJob, onBack }: InspectorV
   }, [confirmOpen, preferenceQuery.data, preferenceQuery.isFetched, profile, source.targetName, target])
 
   useEffect(() => {
-    if (!resourcesQuery.isSuccess || !target) return
+    if (!destinationsComplete || !target) return
     if (!destinationEntities.some((entity) => entity.key === resourceKey(target))) setTarget(null)
-  }, [destinationEntities, resourcesQuery.isSuccess, target])
+  }, [destinationEntities, destinationsComplete, target])
 
   const requeueMutation = useMutation({
     mutationFn: () => {
@@ -175,7 +194,40 @@ export function InspectorView({ source, profile, activeJob, onBack }: InspectorV
 
       {messagesQuery.data?.hasMore || messageLimit >= 500 ? <div className="message-load-more"><span>{messageLimit >= 500 && messagesQuery.data?.hasMore ? 'Se alcanzó el límite seguro de 500 mensajes.' : 'Hay más mensajes disponibles en el broker.'}</span>{messageLimit < 500 && messagesQuery.data?.hasMore ? <button className="button button-secondary" onClick={() => setMessageLimit((current) => Math.min(500, current + 100))} disabled={messagesQuery.isFetching}>{messagesQuery.isFetching ? <LoaderCircle size={16} className="spin" /> : <Plus size={16} />}Cargar 100 más</button> : null}</div> : null}
 
-      {confirmOpen ? <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !requeueMutation.isPending) setConfirmOpen(false) }}><section className="modal requeue-modal" role="alertdialog" aria-modal="true" aria-labelledby="requeue-title"><header className="modal-header"><div className="dialog-icon"><Braces size={20} /></div><div><h2 id="requeue-title">Reenviar {selectedIds.length} mensajes</h2><p className="modal-subtitle">Selecciona un destino del mismo namespace.</p></div><button className="icon-button" aria-label="Cerrar" onClick={() => setConfirmOpen(false)} disabled={requeueMutation.isPending}><X size={18} /></button></header><div className="confirm-summary"><div><span>Origen</span><strong>{source.displayName}</strong></div><div><span>Destino</span><strong>{target ? resourceDisplayName(target) : 'Sin seleccionar'}</strong></div><div><span>Perfil</span><strong>{profile.name}</strong></div></div><div className="destination-section"><div className="form-section-heading"><span>Destino</span></div>{resourcesQuery.isLoading ? <div className="routing-feedback routing-loading"><LoaderCircle size={18} className="spin" /><div><strong>Cargando destinos</strong><span>Consultando queues y topics disponibles.</span></div></div> : resourcesQuery.error ? <div className="routing-feedback routing-error" role="alert"><AlertCircle size={18} /><div><strong>No se pudieron cargar los destinos</strong><span>{readableError(resourcesQuery.error)}</span></div></div> : <ResourceExplorerList id="requeue-destination" entities={destinationEntities} selectedKey={target ? resourceKey(target) : null} compact searchPlaceholder="Buscar destino" onActivate={(entity) => setTarget(targetRefFromEntity(entity))} />}</div><label className="field throttle-field"><span>Máximo por segundo</span><input type="number" min="0.2" max="100" step="0.2" value={throttle} onChange={(event) => setThrottle(Number(event.target.value))} /></label>{requeueMutation.error ? <div className="field-error" role="alert">{readableError(requeueMutation.error)}</div> : null}<footer className="modal-actions"><button className="button button-secondary" onClick={() => setConfirmOpen(false)} disabled={requeueMutation.isPending}>Cancelar</button><button className="button button-primary" onClick={() => requeueMutation.mutate()} disabled={requeueMutation.isPending || !target}><CheckCircle2 size={16} />{requeueMutation.isPending ? 'Iniciando...' : 'Confirmar requeue'}</button></footer></section></div> : null}
+      {confirmOpen ? (
+        <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !requeueMutation.isPending) setConfirmOpen(false) }}>
+          <section className="modal requeue-modal" role="alertdialog" aria-modal="true" aria-labelledby="requeue-title">
+            <header className="modal-header"><div className="dialog-icon"><Braces size={20} /></div><div><h2 id="requeue-title">Reenviar {selectedIds.length} mensajes</h2><p className="modal-subtitle">Selecciona un destino del mismo namespace.</p></div><button className="icon-button" aria-label="Cerrar" onClick={() => setConfirmOpen(false)} disabled={requeueMutation.isPending}><X size={18} /></button></header>
+            <div className="confirm-summary"><div><span>Origen</span><strong>{source.displayName}</strong></div><div><span>Destino</span><strong>{target ? resourceDisplayName(target) : 'Sin seleccionar'}</strong></div><div><span>Perfil</span><strong>{profile.name}</strong></div></div>
+            <div className="destination-section">
+              <div className="form-section-heading"><span>Destino</span></div>
+              {destinationsLoading ? (
+                <div className="routing-feedback routing-loading"><LoaderCircle size={18} className="spin" /><div><strong>Cargando destinos</strong><span>Consultando queues y topics disponibles.</span></div></div>
+              ) : destinationsError && destinationEntities.length === 0 ? (
+                <div className="routing-feedback routing-error" role="alert"><AlertCircle size={18} /><div><strong>No se pudieron cargar los destinos</strong><span>{readableError(destinationsError)}</span></div></div>
+              ) : (
+                <ResourceExplorerList
+                  id="requeue-destination"
+                  entities={destinationEntities}
+                  brokerType={profile.brokerType}
+                  selectedKey={target ? resourceKey(target) : null}
+                  compact
+                  loadingMore={destinationsLoadingMore}
+                  complete={destinationsComplete}
+                  totalCount={destinationEntities.length}
+                  loadError={destinationsError ? readableError(destinationsError) : null}
+                  onRetry={() => { if (queuesRequired) queueDestinations.retry(); if (topicsRequired) topicDestinations.retry() }}
+                  searchPlaceholder="Buscar destino"
+                  onActivate={(entity) => setTarget(targetRefFromEntity(entity))}
+                />
+              )}
+            </div>
+            <label className="field throttle-field"><span>Máximo por segundo</span><input type="number" min="0.2" max="100" step="0.2" value={throttle} onChange={(event) => setThrottle(Number(event.target.value))} /></label>
+            {requeueMutation.error ? <div className="field-error" role="alert">{readableError(requeueMutation.error)}</div> : null}
+            <footer className="modal-actions"><button className="button button-secondary" onClick={() => setConfirmOpen(false)} disabled={requeueMutation.isPending}>Cancelar</button><button className="button button-primary" onClick={() => requeueMutation.mutate()} disabled={requeueMutation.isPending || !target}><CheckCircle2 size={16} />{requeueMutation.isPending ? 'Iniciando...' : 'Confirmar requeue'}</button></footer>
+          </section>
+        </div>
+      ) : null}
     </section>
   )
 }

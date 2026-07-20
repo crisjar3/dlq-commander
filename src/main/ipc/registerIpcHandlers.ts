@@ -57,7 +57,9 @@ export function registerIpcHandlers(dependencies: IpcDependencies): void {
   })
   register('testProfile', async ({ id }) => dependencies.registry.test(id))
   register('discoverEntities', (input) => dependencies.discovery.discover(input))
+  register('discoverResourcePage', (input) => dependencies.discovery.discoverPage(input))
   register('listResources', ({ profileId, scope, force }) => dependencies.registry.listResources(profileId, scope, force))
+  register('listResourcePage', ({ profileId, ...request }) => dependencies.registry.listResourcePage(profileId, request))
   register('getDestinationPreference', ({ profileId, source }) => ({
     target: dependencies.preferences.getDestination(profileId, source)
   }))

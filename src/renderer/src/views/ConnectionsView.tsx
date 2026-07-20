@@ -23,7 +23,8 @@ import type {
   BrokerType,
   ConnectionProfile,
   ConnectionProfileInput,
-  DiscoveredEntity
+  DiscoveredEntity,
+  ResourceCollection
 } from '@shared/domain'
 import { discoveryErrorState, type DiscoveryUiState } from '@shared/connection-discovery'
 import { ResourceExplorerList } from '../components/ResourceExplorerList'
@@ -59,6 +60,18 @@ type ConnectionField = 'host' | 'port' | 'vhost' | 'tls' | 'managementUrl' | 'us
 interface DiscoveryRequest {
   input: BrokerDiscoveryInput
   revision: number
+  resume: boolean
+}
+
+interface DiscoverySession {
+  input: BrokerDiscoveryInput
+  revision: number
+  entities: Map<string, DiscoveredEntity>
+  cursors: Map<string, string | null>
+  completed: Set<string>
+  seenCursors: Set<string>
+  totalByCollection: Map<string, number | null>
+  latencyMs: number
 }
 
 const initialForm: FormState = {
@@ -80,7 +93,9 @@ export function ConnectionsView({ onExplore }: ConnectionsViewProps): React.JSX.
   const [selectedEntity, setSelectedEntity] = useState<DiscoveredEntity | null>(null)
   const [discoveryError, setDiscoveryError] = useState('')
   const [discoveryLatency, setDiscoveryLatency] = useState<number | null>(null)
+  const [discoveryTotal, setDiscoveryTotal] = useState<number | null>(null)
   const discoveryRevision = useRef(0)
+  const discoverySession = useRef<DiscoverySession | null>(null)
 
   const resetDialog = (): void => {
     discoveryRevision.current += 1
@@ -90,6 +105,8 @@ export function ConnectionsView({ onExplore }: ConnectionsViewProps): React.JSX.
     setDiscoveryState('initial')
     setDiscoveryError('')
     setDiscoveryLatency(null)
+    setDiscoveryTotal(null)
+    discoverySession.current = null
   }
 
   const saveMutation = useMutation({
@@ -105,8 +122,60 @@ export function ConnectionsView({ onExplore }: ConnectionsViewProps): React.JSX.
     onError: (error) => setFeedback({ tone: 'error', text: readableError(error) })
   })
   const discoveryMutation = useMutation({
-    mutationFn: ({ input }: DiscoveryRequest) => invoke('discoverEntities', input),
-    onMutate: () => { setDiscoveryState('discovering'); setDiscoveryError(''); setDiscoveryLatency(null); setSelectedEntity(null) },
+    mutationFn: async ({ input, revision, resume }: DiscoveryRequest) => {
+      const collections = discoveryCollections(input.brokerType)
+      let session = discoverySession.current
+      if (!resume || !session || session.revision !== revision) {
+        session = {
+          input,
+          revision,
+          entities: new Map(),
+          cursors: new Map(collections.map((collection) => [collectionKey(collection), null])),
+          completed: new Set(),
+          seenCursors: new Set(),
+          totalByCollection: new Map(),
+          latencyMs: 0
+        }
+        discoverySession.current = session
+      }
+
+      const loadCollection = async (collection: ResourceCollection): Promise<void> => {
+        const key = collectionKey(collection)
+        if (session.completed.has(key)) return
+        let cursor = session.cursors.get(key) ?? null
+        do {
+          const result = await invoke('discoverResourcePage', {
+            connection: input,
+            request: { collection, cursor, pageSize: 50, force: false }
+          })
+          if (revision !== discoveryRevision.current) return
+          for (const entity of result.entities) session.entities.set(entity.key, entity)
+          session.latencyMs += result.latencyMs
+          session.totalByCollection.set(key, result.totalCount)
+          cursor = result.nextCursor
+          if (cursor && session.seenCursors.has(cursor)) throw new Error('El broker devolvio un cursor repetido')
+          if (cursor) session.seenCursors.add(cursor)
+          session.cursors.set(key, cursor)
+          setEntities([...session.entities.values()])
+          setDiscoveryLatency(session.latencyMs)
+          setDiscoveryTotal(sumKnownTotals(session.totalByCollection))
+        } while (cursor)
+        session.completed.add(key)
+      }
+
+      await Promise.all(collections.map(loadCollection))
+      return { entities: [...session.entities.values()], latencyMs: session.latencyMs }
+    },
+    onMutate: (request) => {
+      setDiscoveryState('discovering')
+      setDiscoveryError('')
+      if (!request.resume) {
+        setEntities([])
+        setDiscoveryLatency(null)
+        setDiscoveryTotal(null)
+        setSelectedEntity(null)
+      }
+    },
     onSuccess: (result, request) => {
       if (request.revision !== discoveryRevision.current) return
       setEntities(result.entities)
@@ -116,7 +185,6 @@ export function ConnectionsView({ onExplore }: ConnectionsViewProps): React.JSX.
     onError: (error, request) => {
       if (request.revision !== discoveryRevision.current) return
       const parsed = parseAppError(error)
-      setEntities([])
       setSelectedEntity(null)
       setDiscoveryError(parsed.message)
       setDiscoveryState(discoveryErrorState(parsed.code))
@@ -151,6 +219,8 @@ export function ConnectionsView({ onExplore }: ConnectionsViewProps): React.JSX.
       setSelectedEntity(null)
       setDiscoveryError('')
       setDiscoveryLatency(null)
+      setDiscoveryTotal(null)
+      discoverySession.current = null
       if (discoveryState !== 'initial') setDiscoveryState('stale')
     }
   }
@@ -158,9 +228,17 @@ export function ConnectionsView({ onExplore }: ConnectionsViewProps): React.JSX.
   const switchBroker = (brokerType: FormState['brokerType']): void => {
     discoveryRevision.current += 1
     setForm((current) => ({ ...initialForm, name: current.name, readOnly: current.readOnly, brokerType }))
-    setEntities([]); setSelectedEntity(null); setDiscoveryState('initial'); setDiscoveryError(''); setDiscoveryLatency(null)
+    setEntities([]); setSelectedEntity(null); setDiscoveryState('initial'); setDiscoveryError(''); setDiscoveryLatency(null); setDiscoveryTotal(null); discoverySession.current = null
   }
-  const discover = (): void => discoveryMutation.mutate({ input: buildDiscoveryInput(form), revision: discoveryRevision.current })
+  const discover = (): void => discoveryMutation.mutate({ input: buildDiscoveryInput(form), revision: discoveryRevision.current, resume: false })
+  const retryDiscovery = (): void => {
+    const session = discoverySession.current
+    if (session && session.revision === discoveryRevision.current) {
+      discoveryMutation.mutate({ input: session.input, revision: session.revision, resume: true })
+    } else {
+      discover()
+    }
+  }
   const closeDialog = (): void => { if (!busy) { setFormOpen(false); resetDialog() } }
   const submit = (event: FormEvent): void => {
     event.preventDefault()
@@ -198,7 +276,7 @@ export function ConnectionsView({ onExplore }: ConnectionsViewProps): React.JSX.
               {form.brokerType === 'rabbitmq' ? <RabbitFields form={form} onChange={updateConnectionField} /> : form.brokerType === 'azure-service-bus' ? <label className="field field-wide"><span>Connection string</span><textarea required rows={3} value={form.connectionString} onChange={(event) => updateConnectionField('connectionString', event.target.value)} placeholder="Endpoint=sb://..." /></label> : <><label className="field field-wide"><span>Bootstrap servers</span><input required value={form.bootstrapServers} onChange={(event) => updateConnectionField('bootstrapServers', event.target.value)} /></label><label className="field field-wide"><span>Client ID</span><input required value={form.clientId} onChange={(event) => updateConnectionField('clientId', event.target.value)} /></label></>}
               <div className="discovery-action field-wide"><button type="button" className="button button-secondary" onClick={discover} disabled={!canDiscover(form) || discoveryMutation.isPending}>{discoveryMutation.isPending ? <LoaderCircle size={16} className="spin" /> : discoveryState === 'stale' ? <RefreshCw size={16} /> : <Cable size={16} />}{discoveryMutation.isPending ? 'Buscando recursos' : discoveryState === 'stale' ? 'Buscar nuevamente' : 'Conectar y buscar'}</button></div>
               <div className="form-section-heading field-wide"><span>Recursos</span></div>
-              <DiscoveryArea state={discoveryState} brokerType={form.brokerType} entities={entities} selected={selectedEntity} latency={discoveryLatency} error={discoveryError} form={form} onSelect={setSelectedEntity} onRetry={discover} onEnterManual={() => { discoveryRevision.current += 1; setEntities([]); setSelectedEntity(null); setDiscoveryError(''); setDiscoveryState('manual') }} onLeaveManual={() => { discoveryRevision.current += 1; setForm((current) => ({ ...current, sourceQueue: '', sourceTopic: '', targetQueue: '' })); setDiscoveryState('initial') }} onManualChange={setForm} />
+              <DiscoveryArea state={discoveryState} brokerType={form.brokerType} entities={entities} selected={selectedEntity} latency={discoveryLatency} total={discoveryTotal} error={discoveryError} form={form} onSelect={setSelectedEntity} onRetry={retryDiscovery} onEnterManual={() => { discoveryRevision.current += 1; setEntities([]); setSelectedEntity(null); setDiscoveryError(''); setDiscoveryState('manual') }} onLeaveManual={() => { discoveryRevision.current += 1; setForm((current) => ({ ...current, sourceQueue: '', sourceTopic: '', targetQueue: '' })); setDiscoveryState('initial') }} onManualChange={setForm} />
               <label className="toggle field-wide"><input type="checkbox" checked={form.readOnly} onChange={(event) => setForm({ ...form, readOnly: event.target.checked })} /><span className="toggle-track" /><span><strong>Solo lectura</strong><small>Bloquea requeue y operaciones masivas.</small></span></label>
             </div>
             <footer className="modal-actions"><button type="button" className="button button-secondary" onClick={closeDialog} disabled={busy}>Cancelar</button><button type="submit" className="button button-primary" disabled={busy || !canSaveProfile(form, discoveryState)}>{saveMutation.isPending ? 'Guardando...' : discoveryState === 'manual' ? 'Guardar ruta fija' : 'Guardar y explorar'}</button></footer>
@@ -215,11 +293,13 @@ function RabbitFields({ form, onChange }: RabbitFieldsProps): React.JSX.Element 
   return <><label className="field"><span>Host</span><input required value={form.host} onChange={(event) => onChange('host', event.target.value)} /></label><label className="field"><span>Puerto AMQP</span><input required type="number" min="1" max="65535" value={form.port} onChange={(event) => onChange('port', event.target.value)} /></label><label className="field"><span>Virtual host</span><input required value={form.vhost} onChange={(event) => onChange('vhost', event.target.value)} /></label><label className="field"><span>Usuario</span><input required autoComplete="username" value={form.username} onChange={(event) => onChange('username', event.target.value)} /></label><label className="field field-wide"><span>Contraseña</span><input required type="password" autoComplete="new-password" value={form.password} onChange={(event) => onChange('password', event.target.value)} /></label><details className="advanced-options field-wide"><summary>Opciones avanzadas</summary><div className="advanced-options-content"><label className="toggle"><input type="checkbox" checked={form.tls} onChange={(event) => onChange('tls', event.target.checked)} /><span className="toggle-track" /><span><strong>TLS</strong><small>Usa AMQPS y Management API segura.</small></span></label><label className="field"><span>Management URL</span><input type="url" value={form.managementUrl} onChange={(event) => onChange('managementUrl', event.target.value)} placeholder={derived} /></label></div></details></>
 }
 
-interface DiscoveryAreaProps { state: DiscoveryUiState; brokerType: FormState['brokerType']; entities: DiscoveredEntity[]; selected: DiscoveredEntity | null; latency: number | null; error: string; form: FormState; onSelect(entity: DiscoveredEntity): void; onRetry(): void; onEnterManual(): void; onLeaveManual(): void; onManualChange(form: FormState): void }
+interface DiscoveryAreaProps { state: DiscoveryUiState; brokerType: FormState['brokerType']; entities: DiscoveredEntity[]; selected: DiscoveredEntity | null; latency: number | null; total: number | null; error: string; form: FormState; onSelect(entity: DiscoveredEntity): void; onRetry(): void; onEnterManual(): void; onLeaveManual(): void; onManualChange(form: FormState): void }
 function DiscoveryArea(props: DiscoveryAreaProps): React.JSX.Element {
-  if (props.state === 'success') return <div className="discovery-preview field-wide" aria-live="polite"><div className="routing-status-line"><span className="success-text"><Check size={15} />{props.entities.length} recursos · {props.latency ?? 0} ms</span><button type="button" className="text-button" onClick={props.onEnterManual}>Ingresar manualmente</button></div><ResourceExplorerList id="connection-preview" entities={props.entities} selectedKey={props.selected?.key} compact searchPlaceholder="Buscar queue o topic" onActivate={props.onSelect} /></div>
+  if (props.state === 'success') return <div className="discovery-preview field-wide" aria-live="polite"><div className="routing-status-line"><span className="success-text"><Check size={15} />{props.entities.length} recursos · {props.latency ?? 0} ms</span><button type="button" className="text-button" onClick={props.onEnterManual}>Ingresar manualmente</button></div><ResourceExplorerList id="connection-preview" entities={props.entities} brokerType={props.brokerType} selectedKey={props.selected?.key} compact complete totalCount={props.total} searchPlaceholder="Buscar queue o topic" onActivate={props.onSelect} /></div>
   if (props.state === 'manual') return <ManualRouting form={props.form} onChange={props.onManualChange} onLeave={props.onLeaveManual} />
+  if (props.state === 'discovering' && props.entities.length > 0) return <div className="discovery-preview field-wide" aria-live="polite"><div className="routing-status-line"><span><LoaderCircle size={15} className="spin" />{props.entities.length} cargados · cargando...</span></div><ResourceExplorerList id="connection-preview-loading" entities={props.entities} brokerType={props.brokerType} selectedKey={props.selected?.key} compact loadingMore complete={false} totalCount={props.total} searchPlaceholder="Buscar mientras carga" onActivate={props.onSelect} /></div>
   if (props.state === 'discovering') return <div className="routing-feedback routing-loading field-wide" role="status"><LoaderCircle size={18} className="spin" /><div><strong>Consultando el namespace</strong><span>Validando endpoint, credenciales y permisos de administración.</span></div></div>
+  if ((props.state === 'permission-denied' || props.state === 'network-error') && props.entities.length > 0) return <div className="discovery-preview field-wide"><ResourceExplorerList id="connection-preview-partial" entities={props.entities} brokerType={props.brokerType} selectedKey={props.selected?.key} compact complete={false} totalCount={props.total} loadError={props.error} onRetry={props.onRetry} searchPlaceholder="Buscar en recursos cargados" onActivate={props.onSelect} /><div className="routing-status-line"><button type="button" className="text-button" onClick={props.onEnterManual}>Ingresar manualmente</button></div></div>
   if (props.state === 'permission-denied' || props.state === 'network-error') return <div className="routing-feedback routing-error field-wide" role="alert"><AlertCircle size={18} /><div><strong>{props.state === 'permission-denied' ? 'Permisos insuficientes' : 'No fue posible completar la búsqueda'}</strong><span>{props.error}</span><div className="inline-actions"><button type="button" className="text-button" onClick={props.onRetry}>Reintentar</button><button type="button" className="text-button" onClick={props.onEnterManual}>Ingresar manualmente</button></div></div></div>
   if (props.state === 'empty') return <div className="routing-feedback field-wide" role="status"><AlertCircle size={18} /><div><strong>El namespace no devolvió recursos</strong><span>Revisa los permisos o configura una ruta fija.</span><button type="button" className="text-button" onClick={props.onEnterManual}>Ingresar manualmente</button></div></div>
   if (props.state === 'stale') return <div className="routing-feedback routing-stale field-wide" role="status"><RefreshCw size={18} /><div><strong>La conexión cambió</strong><span>Busca nuevamente para validar los recursos.</span></div></div>
@@ -248,6 +328,20 @@ function canDiscover(form: FormState): boolean {
   if (form.brokerType === 'rabbitmq') { const port = Number(form.port); return Boolean(form.host.trim() && port > 0 && port <= 65535 && form.vhost && form.username.trim() && form.password && (!form.managementUrl.trim() || URL.canParse(form.managementUrl))) }
   if (form.brokerType === 'azure-service-bus') return Boolean(form.connectionString.trim())
   return Boolean(form.bootstrapServers.trim() && form.clientId.trim())
+}
+function discoveryCollections(brokerType: FormState['brokerType']): ResourceCollection[] {
+  if (brokerType === 'rabbitmq') return [{ kind: 'queues' }]
+  if (brokerType === 'kafka') return [{ kind: 'topics' }]
+  return [{ kind: 'queues' }, { kind: 'topics' }]
+}
+function collectionKey(collection: ResourceCollection): string {
+  return collection.kind === 'subscriptions' ? `subscriptions:${collection.topicName}` : collection.kind
+}
+function sumKnownTotals(totals: Map<string, number | null>): number | null {
+  const values = [...totals.values()]
+  return values.length > 0 && values.every((value): value is number => value !== null)
+    ? values.reduce((sum, value) => sum + value, 0)
+    : null
 }
 function canSaveProfile(form: FormState, state: DiscoveryUiState): boolean { return form.name.trim().length >= 2 && canDiscover(form) && (state === 'success' || state === 'manual' && Boolean(form.sourceQueue.trim() && form.targetQueue.trim() && (form.brokerType !== 'azure-service-bus' || form.sourceKind === 'queue' || form.sourceTopic.trim()))) }
 function brokerName(type: BrokerType): string { return type === 'azure-service-bus' ? 'Azure Service Bus' : type === 'rabbitmq' ? 'RabbitMQ' : type === 'kafka' ? 'Apache Kafka' : 'Entorno demo integrado' }

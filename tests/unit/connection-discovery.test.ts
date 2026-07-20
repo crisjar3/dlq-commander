@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { discoveryErrorState, selectRouting, suggestedSourceName } from '../../src/shared/connection-discovery'
-import type { DiscoveredEntity } from '../../src/shared/domain'
+import { emptyResourceMetrics, type DiscoveredEntity } from '../../src/shared/domain'
 
 const entity = (name: string, messageCount: number, suggestedSource: boolean): DiscoveredEntity => ({
   key: `queue:${name}`, name, kind: 'queue', parent: null, messageCount, childCount: null,
-  canInspect: true, canTarget: true, suggestedSource
+  canInspect: true, canTarget: true, suggestedSource, status: null, metrics: emptyResourceMetrics()
 })
 
 describe('connection discovery state helpers', () => {

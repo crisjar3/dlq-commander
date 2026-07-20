@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, ArrowLeft, ChevronRight, RefreshCw } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { AlertCircle, ArrowLeft, ChevronRight } from 'lucide-react'
 import {
   capabilitiesByBroker,
   resourceDisplayName,
   resourceKey,
   type ConnectionProfile,
   type DiscoveredEntity,
-  type ResourceScope,
+  type ResourceCollection,
   type SourceSummary
 } from '@shared/domain'
 import { resourceRefFromEntity } from '@shared/resources'
 import { ResourceExplorerList } from '../components/ResourceExplorerList'
+import { useResourceCatalog } from '../hooks/useResourceCatalog'
 import { invoke, readableError } from '../lib/api'
 
 interface ResourceExplorerViewProps {
@@ -22,25 +23,35 @@ interface ResourceExplorerViewProps {
 }
 
 export function ResourceExplorerView({ profile, initialResource = null, onBack, onInspect }: ResourceExplorerViewProps): React.JSX.Element {
-  const queryClient = useQueryClient()
   const [tab, setTab] = useState<'queue' | 'topic'>('queue')
   const [topicName, setTopicName] = useState<string | null>(null)
   const initialHandled = useRef(false)
-  const scope: ResourceScope = topicName ? { kind: 'topic', topicName } : { kind: 'root' }
-  const queryKey = ['resources', profile.id, scope.kind, topicName ?? 'root'] as const
-  const resourcesQuery = useQuery({
-    queryKey,
-    queryFn: () => invoke('listResources', { profileId: profile.id, scope, force: false }),
+  const namespaceMode = profile.brokerType === 'demo' || profile.configuration['profileMode'] === 'namespace'
+  const queueCollection: ResourceCollection = { kind: 'queues' }
+  const topicCollection: ResourceCollection = { kind: 'topics' }
+  const subscriptionCollection: ResourceCollection = { kind: 'subscriptions', topicName: topicName ?? '__inactive__' }
+  const queues = useResourceCatalog(profile.id, queueCollection, namespaceMode && !topicName && profile.brokerType !== 'kafka')
+  const topics = useResourceCatalog(profile.id, topicCollection, namespaceMode && !topicName && (profile.brokerType === 'azure-service-bus' || profile.brokerType === 'kafka'))
+  const subscriptions = useResourceCatalog(profile.id, subscriptionCollection, namespaceMode && Boolean(topicName))
+  const legacyQuery = useQuery({
+    queryKey: ['resources', profile.id, 'legacy-fixed'],
+    queryFn: () => invoke('listResources', { profileId: profile.id, scope: { kind: 'root' }, force: false }),
+    enabled: !namespaceMode,
     staleTime: 60_000
   })
-  const allEntities = useMemo(() => resourcesQuery.data?.entities ?? [], [resourcesQuery.data])
-  const entities = useMemo(() => {
-    if (topicName) return allEntities
-    if (profile.brokerType === 'azure-service-bus') return allEntities.filter((entity) => entity.kind === tab)
-    return allEntities.filter((entity) => entity.canInspect)
-  }, [allEntities, profile.brokerType, tab, topicName])
-  const queueCount = allEntities.filter((entity) => entity.kind === 'queue').length
-  const topicCount = allEntities.filter((entity) => entity.kind === 'topic').length
+
+  const activeCollection = topicName
+    ? subscriptionCollection
+    : profile.brokerType === 'kafka' || profile.brokerType === 'azure-service-bus' && tab === 'topic'
+      ? topicCollection
+      : queueCollection
+  const activeCatalog = topicName ? subscriptions : activeCollection.kind === 'topics' ? topics : queues
+  const legacyEntities = useMemo(() => legacyQuery.data?.entities ?? [], [legacyQuery.data])
+  const entities = namespaceMode
+    ? activeCatalog.entities
+    : legacyEntities.filter((entity) => topicName ? entity.kind === 'subscription' : entity.canInspect)
+  const queueCount = namespaceMode ? queues.loadedCount : legacyEntities.filter((entity) => entity.kind === 'queue').length
+  const topicCount = namespaceMode ? topics.loadedCount : legacyEntities.filter((entity) => entity.kind === 'topic').length
 
   useEffect(() => {
     if (initialHandled.current || !initialResource) return
@@ -49,24 +60,20 @@ export function ResourceExplorerView({ profile, initialResource = null, onBack, 
     else if (initialResource.canInspect) onInspect(sourceFromEntity(initialResource, profile), profile)
   }, [initialResource, onInspect, profile])
 
-  const refresh = async (): Promise<void> => {
-    const result = await invoke('listResources', { profileId: profile.id, scope, force: true })
-    queryClient.setQueryData(queryKey, result)
-  }
-
   const activate = (entity: DiscoveredEntity): void => {
     if (entity.kind === 'topic' && profile.brokerType === 'azure-service-bus') {
       setTopicName(entity.name)
       return
     }
-    if (!entity.canInspect) return
-    onInspect(sourceFromEntity(entity, profile), profile)
+    if (entity.canInspect) onInspect(sourceFromEntity(entity, profile), profile)
   }
 
   const goBack = (): void => {
     if (topicName) setTopicName(null)
     else onBack()
   }
+  const error = namespaceMode ? activeCatalog.error : legacyQuery.error
+  const loading = namespaceMode ? activeCatalog.isInitialLoading : legacyQuery.isLoading
 
   return (
     <section className="view resource-view" aria-labelledby="resource-view-title">
@@ -82,9 +89,6 @@ export function ResourceExplorerView({ profile, initialResource = null, onBack, 
             <p className="view-subtitle">{topicName ? `DLQ disponibles en ${topicName}` : brokerExplorerDescription(profile)}</p>
           </div>
         </div>
-        <button className="button button-secondary" onClick={() => void refresh()} disabled={resourcesQuery.isFetching}>
-          <RefreshCw size={16} className={resourcesQuery.isFetching ? 'spin' : ''} />Actualizar
-        </button>
       </header>
 
       {profile.brokerType === 'azure-service-bus' && !topicName ? (
@@ -94,15 +98,23 @@ export function ResourceExplorerView({ profile, initialResource = null, onBack, 
         </div>
       ) : null}
 
-      {resourcesQuery.error ? (
-        <div className="notice notice-error" role="alert"><AlertCircle size={18} /><div><strong>No se pudieron cargar los recursos.</strong><span>{readableError(resourcesQuery.error)}</span></div></div>
+      {error && entities.length === 0 ? (
+        <div className="notice notice-error" role="alert"><AlertCircle size={18} /><div><strong>No se pudieron cargar los recursos.</strong><span>{readableError(error)}</span></div></div>
       ) : null}
 
-      {resourcesQuery.isLoading ? <ResourceExplorerSkeleton /> : (
+      {loading ? <ResourceExplorerSkeleton /> : (
         <ResourceExplorerList
           id={`resources-${profile.id}-${topicName ?? tab}`}
           entities={entities}
+          brokerType={profile.brokerType}
+          collection={activeCollection}
           autoFocus
+          loadingMore={namespaceMode && activeCatalog.isLoadingMore}
+          complete={!namespaceMode || activeCatalog.isComplete}
+          totalCount={namespaceMode ? activeCatalog.totalCount : entities.length}
+          loadError={error && entities.length > 0 ? readableError(error) : null}
+          onRetry={namespaceMode ? activeCatalog.retry : undefined}
+          onRefresh={namespaceMode ? activeCatalog.refresh : undefined}
           searchPlaceholder={topicName ? 'Buscar subscription' : tab === 'topic' ? 'Buscar topic' : profile.brokerType === 'kafka' ? 'Buscar topic' : 'Buscar queue'}
           emptyText={topicName ? 'No hay subscriptions que coincidan' : 'No hay recursos que coincidan'}
           onActivate={activate}
@@ -117,7 +129,7 @@ function sourceFromEntity(entity: DiscoveredEntity, profile: ConnectionProfile):
   const suffix = profile.brokerType === 'azure-service-bus'
     ? ' / $DeadLetterQueue'
     : profile.brokerType === 'kafka' ? ' / DLT' : ''
-  const depth = entity.messageCount ?? 0
+  const depth = entity.metrics.deadLetterMessages ?? entity.messageCount ?? entity.metrics.totalMessages ?? 0
   return {
     id: resourceKey(resource),
     resource,

@@ -4,6 +4,10 @@ import { connect } from 'amqplib'
 const connection = await connect('amqp://dlqcommander:dlqcommander@localhost:5672/%2F')
 const channel = await connection.createConfirmChannel()
 
+for (let index = 0; index < 125; index += 1) {
+  await channel.assertQueue(`catalog.queue.${String(index + 1).padStart(3, '0')}`, { durable: true })
+}
+
 for (let index = 0; index < 20; index += 1) {
   const body = Buffer.from(JSON.stringify({
     orderId: `LAB-${String(index + 1).padStart(5, '0')}`,
@@ -21,4 +25,4 @@ for (let index = 0; index < 20; index += 1) {
 await channel.waitForConfirms()
 await channel.close()
 await connection.close()
-console.log('Seeded 20 messages into orders.dlq')
+console.log('Seeded 20 messages into orders.dlq and ensured 125 catalog queues')

@@ -57,8 +57,22 @@ export class DemoAdapter implements BrokerAdapter {
       { id: 'payments.dlq', name: 'payments.dlq', displayName: 'Payments / DLQ', targetName: 'payments', messages: [] },
       { id: 'notifications.dlq', name: 'notifications.dlq', displayName: 'Notifications / DLQ', targetName: 'notifications', messages: [] }
     ]
+    const requestedResourceCount = Number(process.env['DLQ_COMMANDER_DEMO_RESOURCE_COUNT'] ?? this.sources.length)
+    const requestedSourceCount = Math.max(this.sources.length, requestedResourceCount - 3)
+    if (Number.isSafeInteger(requestedResourceCount) && requestedSourceCount > this.sources.length) {
+      for (let index = this.sources.length; index < Math.min(requestedSourceCount, 4_997); index += 1) {
+        const sequence = String(index + 1).padStart(4, '0')
+        this.sources.push({
+          id: `service-region-${sequence}.dlq`,
+          name: `service-region-${sequence}.dlq`,
+          displayName: `Service region ${sequence} / DLQ`,
+          targetName: `service-region-${sequence}.dlq`,
+          messages: []
+        })
+      }
+    }
     this.sources.forEach((source, sourceIndex) => {
-      const count = sourceIndex === 0 ? 28 : sourceIndex === 1 ? 11 : 5
+      const count = sourceIndex === 0 ? 28 : sourceIndex === 1 ? 11 : sourceIndex === 2 ? 5 : 0
       source.messages = Array.from({ length: count }, (_, index) => createMessage(source.id, index + sourceIndex * 30))
     })
   }
