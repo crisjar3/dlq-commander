@@ -7,18 +7,18 @@ The application UI is currently in Spanish. Literal screen and action names are 
 ## Prepare a source
 
 1. Create the profile under **Conexiones** with **Solo lectura** enabled.
-2. Use discovery to choose the source and target. If you use manual entry, verify both names in the broker console.
-3. Save the profile and select **Probar**.
-4. Open the Dashboard and confirm broker, source, depth, and status.
+2. Use discovery to verify the namespace. If you use manual entry, verify the fixed source and target in the broker console.
+3. Save the namespace and select **Probar**.
+4. Open the connection from Dashboard, search for the source, and confirm its type and depth.
 5. Inspect a sample and review broker-specific warnings.
 6. To enable requeue, delete and recreate the profile with **Solo lectura** disabled after obtaining authorization.
 7. Run **Probar** again and confirm the target before operating.
 
-The current UI cannot edit saved profiles. Recreating a profile is the only visible way to change credentials, routing, or operation mode.
+The current UI cannot edit saved profiles. Recreating a profile is the only visible way to change credentials or operation mode. Namespace destinations are chosen during requeue and remembered per source.
 
 ## Inspect
 
-1. Open the source from the Dashboard.
+1. Open the connection from Dashboard and find the source in Resource Explorer.
 2. Read the broker-semantics warning.
 3. Filter by Message ID, cause, header, or content.
 4. Open a message and review Payload, Headers, and Metadata.
@@ -30,7 +30,7 @@ For RabbitMQ, limiting inspection reduces ordering changes. For Kafka, remember 
 ## Perform requeue
 
 1. Explicitly select the authorized messages.
-2. Select **Requeue** and verify the source, target, profile, and count.
+2. Select **Requeue**, search for a destination in the same namespace, and verify source, target, profile, and count.
 3. Set **Máximo por segundo** according to consumer capacity and the change-window limit.
 4. Select **Confirmar requeue**.
 5. Keep the application open while the job is running.

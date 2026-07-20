@@ -1,7 +1,16 @@
 import { ServiceBusAdministrationClient } from '@azure/service-bus'
 import { Kafka, logLevel } from 'kafkajs'
 import { z, ZodError } from 'zod'
-import { discoveredEntitySchema, type BrokerDiscoveryInput, type DiscoveredEntity, type DiscoveryResult } from '@shared/domain'
+import {
+  brokerDiscoveryInputSchema,
+  discoveredEntitySchema,
+  resourceKey,
+  type BrokerDiscoveryInput,
+  type BrokerResourceRef,
+  type DiscoveredEntity,
+  type DiscoveryResult,
+  type ValidatedBrokerDiscoveryInput
+} from '@shared/domain'
 import { AppError } from '../core/errors'
 
 const DISCOVERY_TIMEOUT_MS = 15_000
@@ -13,6 +22,15 @@ const rabbitQueueListSchema = z.array(z.object({
 interface AzureAdministrationClient {
   listQueuesRuntimeProperties(options?: { abortSignal?: AbortSignal }): AsyncIterable<{
     name: string
+    deadLetterMessageCount: number
+  }>
+  listTopicsRuntimeProperties(options?: { abortSignal?: AbortSignal }): AsyncIterable<{
+    name: string
+    subscriptionCount?: number
+  }>
+  listSubscriptionsRuntimeProperties(topicName: string, options?: { abortSignal?: AbortSignal }): AsyncIterable<{
+    subscriptionName: string
+    topicName: string
     deadLetterMessageCount: number
   }>
 }
@@ -55,33 +73,34 @@ export class BrokerDiscoveryService {
   }
 
   async discover(input: BrokerDiscoveryInput): Promise<DiscoveryResult> {
+    const validatedInput = brokerDiscoveryInputSchema.parse(input)
     const startedAt = performance.now()
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.dependencies.timeoutMs)
 
     try {
       const entities = discoveredEntitySchema.array().parse(
-        await this.withTimeout(this.discoverBroker(input, controller.signal), controller.signal)
+        await this.withTimeout(this.discoverBroker(validatedInput, controller.signal), controller.signal)
       )
       return {
         entities: sortDiscoveredEntities(entities),
         latencyMs: Math.max(0, Math.round(performance.now() - startedAt))
       }
     } catch (error) {
-      throw this.normalizeError(error, input.brokerType)
+      throw this.normalizeError(error, validatedInput.brokerType)
     } finally {
       clearTimeout(timeout)
     }
   }
 
-  private async discoverBroker(input: BrokerDiscoveryInput, signal: AbortSignal): Promise<DiscoveredEntity[]> {
+  private async discoverBroker(input: ValidatedBrokerDiscoveryInput, signal: AbortSignal): Promise<DiscoveredEntity[]> {
     if (input.brokerType === 'rabbitmq') return this.discoverRabbitMq(input, signal)
     if (input.brokerType === 'azure-service-bus') return this.discoverAzure(input, signal)
     return this.discoverKafka(input)
   }
 
   private async discoverRabbitMq(
-    input: Extract<BrokerDiscoveryInput, { brokerType: 'rabbitmq' }>,
+    input: Extract<ValidatedBrokerDiscoveryInput, { brokerType: 'rabbitmq' }>,
     signal: AbortSignal
   ): Promise<DiscoveredEntity[]> {
     const managementUrl = input.configuration.managementUrl
@@ -116,32 +135,74 @@ export class BrokerDiscoveryService {
     }
     const queues = rabbitQueueListSchema.parse(payload)
     return queues.map((queue) => ({
+      key: resourceKey({ kind: 'queue', name: queue.name }),
       name: queue.name,
       kind: 'queue',
+      parent: null,
       messageCount: queue.messages,
+      childCount: null,
+      canInspect: true,
+      canTarget: true,
       suggestedSource: queue.messages > 0 || isDeadLetterName(queue.name)
     }))
   }
 
   private async discoverAzure(
-    input: Extract<BrokerDiscoveryInput, { brokerType: 'azure-service-bus' }>,
+    input: Extract<ValidatedBrokerDiscoveryInput, { brokerType: 'azure-service-bus' }>,
     signal: AbortSignal
   ): Promise<DiscoveredEntity[]> {
     const client = this.dependencies.createAzureAdministrationClient(input.secret.connectionString)
-    const entities: DiscoveredEntity[] = []
-    for await (const queue of client.listQueuesRuntimeProperties({ abortSignal: signal })) {
-      entities.push({
-        name: queue.name,
-        kind: 'queue',
-        messageCount: queue.deadLetterMessageCount,
-        suggestedSource: queue.deadLetterMessageCount > 0 || isDeadLetterName(queue.name)
-      })
+    if (input.scope.kind === 'topic') {
+      const subscriptions: DiscoveredEntity[] = []
+      for await (const subscription of client.listSubscriptionsRuntimeProperties(input.scope.topicName, { abortSignal: signal })) {
+        const ref: BrokerResourceRef = {
+          kind: 'subscription',
+          topicName: input.scope.topicName,
+          name: subscription.subscriptionName
+        }
+        subscriptions.push({
+          key: resourceKey(ref),
+          name: subscription.subscriptionName,
+          kind: 'subscription',
+          parent: { kind: 'topic', name: input.scope.topicName },
+          messageCount: subscription.deadLetterMessageCount,
+          childCount: null,
+          canInspect: true,
+          canTarget: false,
+          suggestedSource: subscription.deadLetterMessageCount > 0 || isDeadLetterName(subscription.subscriptionName)
+        })
+      }
+      return subscriptions
     }
-    return entities
+
+    const queueTask = collectAsync(client.listQueuesRuntimeProperties({ abortSignal: signal }), (queue) => ({
+      key: resourceKey({ kind: 'queue', name: queue.name }),
+      name: queue.name,
+      kind: 'queue' as const,
+      parent: null,
+      messageCount: queue.deadLetterMessageCount,
+      childCount: null,
+      canInspect: true,
+      canTarget: true,
+      suggestedSource: queue.deadLetterMessageCount > 0 || isDeadLetterName(queue.name)
+    }))
+    const topicTask = collectAsync(client.listTopicsRuntimeProperties({ abortSignal: signal }), (topic) => ({
+      key: resourceKey({ kind: 'topic', name: topic.name }),
+      name: topic.name,
+      kind: 'topic' as const,
+      parent: null,
+      messageCount: null,
+      childCount: topic.subscriptionCount ?? 0,
+      canInspect: false,
+      canTarget: true,
+      suggestedSource: false
+    }))
+    const [queues, topics] = await Promise.all([queueTask, topicTask])
+    return [...queues, ...topics]
   }
 
   private async discoverKafka(
-    input: Extract<BrokerDiscoveryInput, { brokerType: 'kafka' }>
+    input: Extract<ValidatedBrokerDiscoveryInput, { brokerType: 'kafka' }>
   ): Promise<DiscoveredEntity[]> {
     const brokers = input.configuration.bootstrapServers.split(',').map((value) => value.trim()).filter(Boolean)
     if (brokers.length === 0) throw new AppError('DISCOVERY_UNAVAILABLE', 'Agrega al menos un bootstrap server de Kafka')
@@ -150,9 +211,14 @@ export class BrokerDiscoveryService {
       await admin.connect()
       const topics = await admin.listTopics()
       return topics.filter((topic) => !topic.startsWith('__')).map((topic) => ({
+        key: resourceKey({ kind: 'topic', name: topic }),
         name: topic,
         kind: 'topic',
+        parent: null,
         messageCount: null,
+        childCount: null,
+        canInspect: true,
+        canTarget: true,
         suggestedSource: isDeadLetterName(topic)
       }))
     } finally {
@@ -171,7 +237,7 @@ export class BrokerDiscoveryService {
     ])
   }
 
-  private normalizeError(error: unknown, brokerType: BrokerDiscoveryInput['brokerType']): AppError {
+  private normalizeError(error: unknown, brokerType: ValidatedBrokerDiscoveryInput['brokerType']): AppError {
     if (error instanceof AppError) return error
     if (error instanceof ZodError) {
       return new AppError('DISCOVERY_INVALID_RESPONSE', 'El broker devolvio una respuesta de descubrimiento invalida')
@@ -185,6 +251,12 @@ export class BrokerDiscoveryService {
     }
     return new AppError('DISCOVERY_UNAVAILABLE', `No fue posible consultar los recursos de ${brokerLabel(brokerType)}`)
   }
+}
+
+async function collectAsync<T, U>(source: AsyncIterable<T>, map: (value: T) => U): Promise<U[]> {
+  const result: U[] = []
+  for await (const value of source) result.push(map(value))
+  return result
 }
 
 export function deriveRabbitManagementUrl(host: string, tls: boolean): string {
@@ -211,7 +283,7 @@ function isDeadLetterName(name: string): boolean {
   return /(^|[._-])(dlq|dlt|dead[._-]?letter)([._-]|$)/i.test(name)
 }
 
-function brokerLabel(brokerType: BrokerDiscoveryInput['brokerType']): string {
+function brokerLabel(brokerType: ValidatedBrokerDiscoveryInput['brokerType']): string {
   if (brokerType === 'azure-service-bus') return 'Azure Service Bus'
   if (brokerType === 'rabbitmq') return 'RabbitMQ'
   return 'Kafka'

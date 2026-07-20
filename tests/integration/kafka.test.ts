@@ -48,14 +48,15 @@ describe('KafkaAdapter integration', () => {
     const depthBefore = sourcesBefore[0]?.depth ?? 0
     expect(depthBefore).toBeGreaterThan(0)
 
-    const page = await adapter.listMessages(DLT_TOPIC, 500)
+    const source = { kind: 'topic' as const, name: DLT_TOPIC }
+    const page = await adapter.listMessages(source, 500)
     expect(page.warning).toMatch(/append-only/i)
     const selected = page.items.find((message) =>
       typeof message.body === 'object' && message.body !== null && 'testId' in message.body && message.body.testId === testId
     )
     expect(selected).toBeDefined()
 
-    await adapter.requeueMessage(DLT_TOPIC, TARGET_TOPIC, selected!.id)
+    await adapter.requeueMessage(source, { kind: 'topic', name: TARGET_TOPIC }, selected!.id)
     const copied = await consumeByTestId(testId)
     expect(copied).toMatchObject({ testId, scenario: 'integration' })
 

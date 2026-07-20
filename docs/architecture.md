@@ -35,7 +35,7 @@ flowchart LR
 
 ### Renderer
 
-React and TanStack Query implement the Dashboard, Connections, Inspector, Audit, and Settings views. The renderer runs with `sandbox: true`, `contextIsolation: true`, and `nodeIntegration: false`. It sees only sanitized profiles and normalized messages.
+React and TanStack Query implement the Dashboard, Connections, Resource Explorer, Inspector, Audit, and Settings views. TanStack Virtual limits resource and message DOM rows. The renderer runs with `sandbox: true`, `contextIsolation: true`, and `nodeIntegration: false`. It sees only sanitized profiles, structured resource references, and normalized messages.
 
 ### Preload
 
@@ -52,7 +52,7 @@ The main process owns broker SDKs, `node:sqlite`, `safeStorage`, and the job lif
 
 ## IPC contract
 
-Public methods cover local health, profiles, discovery, sources, messages, jobs, and audit history. `src/shared/ipc-contract.ts` is the single source of channel names and schemas.
+Public methods cover local health, profiles, pre-save discovery, saved-profile resources, destination preferences, messages, jobs, and audit history. `src/shared/ipc-contract.ts` is the single source of channel names and schemas.
 
 ```mermaid
 sequenceDiagram
@@ -77,7 +77,7 @@ sequenceDiagram
 
 ## Discovery before persistence
 
-`BrokerDiscoveryService` operates without a saved profile. It receives an endpoint and credentials in memory, applies a uniform 15-second timeout, and returns normalized entities containing a name, type, optional count, and suggested-source flag.
+`BrokerDiscoveryService` operates before persistence and through saved namespace profiles. It receives credentials only in main-process memory, applies a uniform 15-second timeout, and returns normalized entities with a stable key, structured kind, parent, counts, and operation capabilities.
 
 ```mermaid
 flowchart TD
@@ -85,21 +85,28 @@ flowchart TD
     B --> C{"Broker"}
     C -->|"RabbitMQ"| D["GET Management API /api/queues/{vhost}"]
     C -->|"Kafka"| E["Admin listTopics"]
-    C -->|"Azure"| F["listQueuesRuntimeProperties"]
+    C -->|"Azure root"| F["List queue and topic runtime properties"]
+    C -->|"Azure topic"| L["List subscription runtime properties"]
     D --> G["Normalize queues and counts"]
     E --> H["Exclude internal topics"]
     F --> G
+    L --> G
     G --> I["Prioritize DLQ/DLT candidates"]
     H --> I
-    I --> J["Select source and target"]
-    J --> K["Save profile and encrypted secret"]
+    I --> J["Search namespace preview"]
+    J --> K["Save namespace and encrypted secret"]
+    K --> M["Explore resources and choose source"]
 ```
 
-RabbitMQ sends Basic Auth in headers and encodes the virtual host. Kafka always disconnects the Admin client. Azure uses its administration client only during discovery. Credentials never appear in the response.
+RabbitMQ sends Basic Auth in headers and encodes the virtual host. Kafka always disconnects the Admin client. Azure loads subscriptions only when a topic is opened. Credentials never appear in the response.
+
+`BrokerResourceRef` avoids parsing ambiguous names. A queue and topic contain `kind` and `name`; a subscription also contains `topicName`. Azure topics can be navigation containers and destinations while their subscriptions are inspectable sources.
 
 ## Inspection
 
 `BrokerRegistry` creates and retains one adapter per profile. Every adapter produces `SourceSummary` and `NormalizedMessage` values, allowing the UI to reuse one table and details panel even though native read semantics differ.
+
+Saved namespace resources are cached for 60 seconds by profile and scope. Azure root and per-topic subscription scopes use different keys. Explicit refresh bypasses the cache. The Inspector starts with 100 messages and increases the cumulative window by 100 up to 500; filtering runs only over the loaded normalized messages.
 
 - RabbitMQ receives a message and returns it with `nack(requeue=true)`.
 - Kafka reads from the beginning with an ephemeral consumer group and no commits.
@@ -156,7 +163,7 @@ SQLite uses WAL and foreign keys. Current tables store:
 | `archived_messages` | Hash and encrypted pre-requeue snapshot |
 | `schema_migrations` | Applied schema version |
 | `saved_filters` | Reserved structure; the UI does not expose saved filters |
-| `settings` | Reserved structure; the theme currently uses `localStorage` |
+| `settings` | Last successful destination per profile and source; the theme remains in renderer `localStorage` |
 
 `SecretVault` serializes secrets as JSON and calls `safeStorage.encryptString`. The renderer receives profiles without `encrypted_secret`. Snapshots store the encrypted normalized message and a plaintext SHA-256 hash for correlation.
 

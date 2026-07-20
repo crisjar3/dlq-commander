@@ -10,11 +10,11 @@ The application UI is currently in Spanish. Literal field and action names are p
 2. Choose a name that identifies the environment and domain.
 3. Select the broker and complete its endpoint and credentials.
 4. Select **Conectar y buscar**.
-5. Choose the source and target from the discovered resources.
+5. Search the namespace preview and optionally select a resource to open first.
 6. Keep **Solo lectura** enabled during initial validation.
-7. Save the profile and select **Probar**.
+7. Select **Guardar y explorar**, then run **Probar** from the connection list.
 
-Discovery occurs before the profile is saved. Credentials remain in memory during that call and are persisted, encrypted, only after **Guardar perfil** is selected.
+Discovery occurs before the profile is saved. Credentials remain in memory during that call and are persisted, encrypted, only after **Guardar y explorar** is selected. A namespace profile does not store a fixed source or destination.
 
 ## RabbitMQ
 
@@ -24,7 +24,7 @@ Discovery occurs before the profile is saved. Credentials remain in memory durin
 | --- | --- | --- |
 | Host | Broker DNS name or IP address, without a protocol | `localhost` |
 | AMQP port | Port used for inspection and requeue | `5672` |
-| Virtual host | Scope containing the source and target | `/` |
+| Virtual host | Scope containing the queues to explore | `/` |
 | Username | RabbitMQ identity | `dlqcommander` |
 | Password | Identity secret | Environment-specific value |
 | TLS | Changes AMQP to AMQPS and updates the derived Management URL | Disabled in the lab |
@@ -44,9 +44,9 @@ Discovery sends Basic Auth through the `Authorization` header. A user can have A
 
 ### Expected behavior
 
-The result includes every queue visible in the virtual host. DLQCommander displays the `messages` count, lists non-empty or DLQ/DLT-like queues first, and uses alphabetical order for the rest.
+The result includes every queue visible in the virtual host. DLQCommander displays the `messages` count, lists non-empty or DLQ/DLT-like queues first, and uses alphabetical order for the rest. Search is local after discovery.
 
-**Probar** opens AMQP, verifies that both source and target exist, and returns latency. During requeue, the application uses publisher confirms and acknowledges the original message only after a successful publish.
+For namespace profiles, **Probar** validates AMQP and Management API access. The selected queue becomes the operation source only when it is opened. During requeue, the operator chooses a queue destination; the application uses publisher confirms and acknowledges the original message only after a successful publish.
 
 ### Local lab
 
@@ -71,8 +71,6 @@ The equivalent connection URI is `amqp://dlqcommander:dlqcommander@localhost:567
 | --- | --- | --- |
 | Bootstrap servers | Comma-separated brokers | `localhost:9092` |
 | Client ID | Client identifier shown in broker logs | `dlq-commander` |
-| DLT topic | Source to inspect | `orders.events.dlt` |
-| Target topic | Topic that receives the copy | `orders.events` |
 
 The current UI configures PLAINTEXT connections. It does not expose TLS, SASL, Schema Registry, or provider-specific authentication.
 
@@ -90,7 +88,7 @@ Names beginning with `__` are treated as internal and excluded from discovery. K
 
 ### Expected behavior
 
-**Probar** confirms that both topics exist. The Inspector uses an ephemeral group ID, starts at the beginning, and does not commit offsets. Requeue publishes the key, value, and headers to the target, adds source topic, partition, and offset references, and keeps the original DLT record.
+**Probar** validates the Kafka administration connection. Any visible non-internal topic can be opened. The Inspector uses an ephemeral group ID, starts at the beginning, and does not commit offsets. Requeue lets the operator search for a destination topic, publishes the key, value, and headers, adds source topic, partition, and offset references, and keeps the original record.
 
 ### Local lab
 
@@ -117,18 +115,20 @@ Never write a real connection string to repository files, screenshots, logs, or 
 
 | Operation | Required permission |
 | --- | --- |
-| Discovery and exact count | `Manage` |
+| Enumerate queues, topics, subscriptions, and exact counts | `Manage` |
 | `$DeadLetterQueue` inspection | `Listen` |
 | Send to target | `Send` |
 | Complete the original message | `Listen` |
 
-A `Manage` policy usually includes Listen and Send. To reduce privileges, use narrower operational credentials and enter source and target names manually, but exact runtime-property counts are unavailable without `Manage`.
+A `Manage` policy usually includes Listen and Send. To reduce privileges, use narrower operational credentials and create a fixed manual route. Namespace exploration and exact runtime-property counts are unavailable without `Manage`.
 
 ### Expected behavior
 
-Discovery enumerates queues with `listQueuesRuntimeProperties()` and displays `deadLetterMessageCount`. The saved profile treats the selected queue as the source and opens its `$DeadLetterQueue` subqueue.
+Root discovery enumerates queues with `listQueuesRuntimeProperties()` and topics with `listTopicsRuntimeProperties()`. Queue rows display `deadLetterMessageCount`; topic rows display subscription count.
 
-**Probar** peeks into the DLQ. Inspection does not lock, complete, or remove messages. Requeue receives the message in peek-lock mode, sends it to the target, and completes the original only after a successful send.
+Opening a topic lazily calls `listSubscriptionsRuntimeProperties(topicName)`. A subscription row represents that subscription's `$DeadLetterQueue`. Queues and subscriptions are inspectable sources. Azure topics are navigation containers and valid destinations, but they are not directly inspectable DLQs.
+
+**Probar** validates namespace administration access. Inspection peeks without locking, completing, or removing messages. Requeue receives from the queue or subscription DLQ in peek-lock mode, sends to the chosen queue or topic, and completes the original only after a successful send.
 
 ## Local Demo
 

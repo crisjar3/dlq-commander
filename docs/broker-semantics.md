@@ -62,9 +62,9 @@ Current profiles support PLAINTEXT; TLS and SASL are not exposed in the UI.
 
 ### Discovery and depth
 
-`ServiceBusAdministrationClient.listQueuesRuntimeProperties()` enumerates queues and returns `deadLetterMessageCount`. It requires `Manage` permission.
+`ServiceBusAdministrationClient` enumerates queue and topic runtime properties at the namespace root. Opening a topic lazily enumerates its subscription runtime properties. Queue and subscription rows use `deadLetterMessageCount`. These administration calls require `Manage` permission.
 
-After a profile is saved, the Dashboard attempts `getQueueRuntimeProperties`. If the credential lacks `Manage`, connectivity remains available and depth falls back to the size of a peeked sample. That value is an observable minimum, not a confirmed total.
+Queue sources open the queue `$DeadLetterQueue`; subscription sources open the subscription `$DeadLetterQueue` with both topic and subscription names. Azure topics have no directly inspectable DLQ in this model and are used as subscription containers or destinations.
 
 ### Inspection
 
@@ -83,7 +83,7 @@ Demo validates UI, audit, and job workflows. It does not prove external broker c
 ## Common rules
 
 - A profile configures one specific source and one target.
-- The Inspector requests up to 250 messages; the contract allows a maximum of 500 per page.
+- The Inspector requests 100 messages initially and expands the cumulative window by 100, up to 500 messages per session.
 - Requeue processes selected messages sequentially with throttling.
 - A batch with at least one success can finish as completed while retaining a nonzero failure count.
 - Closing the application does not revert already confirmed publishes or completes.

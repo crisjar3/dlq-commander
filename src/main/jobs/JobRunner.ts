@@ -1,15 +1,22 @@
 import { randomUUID } from 'node:crypto'
-import type { OperationJob } from '@shared/domain'
+import {
+  resourceDisplayName,
+  resourceKey,
+  type BrokerResourceRef,
+  type OperationJob,
+  type TargetResourceRef
+} from '@shared/domain'
 import { AppError, toSafeError } from '../core/errors'
 import type { BrokerRegistry } from '../brokers/BrokerRegistry'
 import type { ProfileRepository } from '../persistence/ProfileRepository'
 import type { AuditRepository } from '../persistence/AuditRepository'
 import type { ArchiveRepository } from '../persistence/ArchiveRepository'
+import type { ResourcePreferenceRepository } from '../persistence/ResourcePreferenceRepository'
 
 export interface RequeueRequest {
   profileId: string
-  sourceId: string
-  targetName: string
+  source: BrokerResourceRef
+  target: TargetResourceRef
   messageIds: string[]
   throttlePerSecond: number
 }
@@ -27,6 +34,7 @@ export class JobRunner {
     private readonly registry: BrokerRegistry,
     private readonly audit: AuditRepository,
     private readonly archive: ArchiveRepository,
+    private readonly preferences: ResourcePreferenceRepository,
     private readonly emit: (job: OperationJob) => void
   ) {}
 
@@ -38,7 +46,7 @@ export class JobRunner {
     const activeForSource = [...this.jobs.values()].some(
       ({ job }) =>
         job.profileId === request.profileId &&
-        job.sourceId === request.sourceId &&
+        job.sourceId === resourceKey(request.source) &&
         (job.status === 'queued' || job.status === 'running')
     )
     if (activeForSource) throw new AppError('JOB_ALREADY_RUNNING', 'Ya existe una operacion activa para esta fuente.')
@@ -46,8 +54,8 @@ export class JobRunner {
     const job: OperationJob = {
       id: randomUUID(),
       profileId: request.profileId,
-      sourceId: request.sourceId,
-      targetName: request.targetName,
+      sourceId: resourceKey(request.source),
+      targetName: resourceDisplayName(request.target),
       status: 'queued',
       total: request.messageIds.length,
       processed: 0,
@@ -94,8 +102,8 @@ export class JobRunner {
 
     try {
       const adapter = this.registry.get(job.profileId)
-      const snapshotPage = await adapter.listMessages(job.sourceId, Math.min(job.total * 3, 500))
-      const snapshots = new Map(snapshotPage.items.map((message) => [message.id, message]))
+      const snapshotItems = await adapter.getMessageSnapshots(request.source, request.messageIds)
+      const snapshots = new Map(snapshotItems.map((message) => [message.id, message]))
       const intervalMs = 1000 / request.throttlePerSecond
 
       for (const [index, messageId] of request.messageIds.entries()) {
@@ -110,7 +118,7 @@ export class JobRunner {
             throw new AppError('ARCHIVE_SOURCE_MISSING', `No se pudo archivar ${messageId}; no se ejecutó el requeue.`)
           }
           this.archive.archive(job.id, job.profileId, snapshot)
-          await adapter.requeueMessage(job.sourceId, job.targetName, messageId)
+          await adapter.requeueMessage(request.source, request.target, messageId)
           job.succeeded += 1
         } catch (error) {
           job.failed += 1
@@ -121,6 +129,7 @@ export class JobRunner {
       }
 
       if (job.status !== 'cancelled') job.status = job.failed === job.total ? 'failed' : 'completed'
+      if (job.succeeded > 0) this.preferences.rememberDestination(job.profileId, request.source, request.target)
     } catch (error) {
       const safeError = toSafeError(error)
       job.status = 'failed'

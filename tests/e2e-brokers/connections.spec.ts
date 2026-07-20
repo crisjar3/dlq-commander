@@ -80,23 +80,23 @@ test('tests RabbitMQ and Kafka profiles through the real Electron IPC boundary',
   expect(result.kafkaSources[0]!.depth).toBeGreaterThan(0)
 })
 
-test('creates a RabbitMQ profile from discovered queues in the modal', async () => {
+test('creates an explorable RabbitMQ namespace from the modal', async () => {
   await page.getByRole('button', { name: 'Conexiones' }).click()
   await page.getByRole('button', { name: 'Nueva conexión' }).click()
   await page.getByLabel('Nombre del perfil').fill('RabbitMQ UI Discovery')
   await page.getByLabel('Contraseña').fill('dlqcommander')
   await page.getByRole('button', { name: 'Conectar y buscar' }).click()
 
-  await expect(page.getByText(/colas encontradas/)).toBeVisible()
+  await expect(page.getByText(/recursos/).first()).toBeVisible()
   await page.getByLabel('Virtual host').fill('/stale')
   await expect(page.getByText('La conexión cambió')).toBeVisible()
   await page.getByLabel('Virtual host').fill('/')
   await page.getByRole('button', { name: 'Buscar nuevamente' }).click()
-  await expect(page.getByText(/colas encontradas/)).toBeVisible()
-  await page.getByRole('combobox', { name: 'Cola destino' }).click()
-  await page.locator('.resource-option').filter({ has: page.getByText('orders', { exact: true }) }).click()
-  await page.getByRole('button', { name: 'Guardar perfil' }).click()
+  await expect(page.getByRole('option', { name: /orders\.dlq/i })).toBeVisible()
+  await page.getByRole('button', { name: 'Guardar y explorar' }).click()
+  await expect(page.getByRole('heading', { name: 'Explorador de recursos' })).toBeVisible()
 
+  await page.getByRole('button', { name: 'Conexiones' }).click()
   const profile = page.locator('article').filter({ hasText: 'RabbitMQ UI Discovery' })
   await expect(profile).toBeVisible()
   await profile.getByRole('button', { name: 'Probar' }).click()
@@ -111,9 +111,9 @@ test('offers manual routing when RabbitMQ discovery has insufficient permissions
 
   await expect(page.getByText('Permisos insuficientes')).toBeVisible()
   await page.getByRole('button', { name: 'Ingresar manualmente' }).click()
-  await expect(page.getByText('Entrada manual')).toBeVisible()
-  await page.getByLabel('Cola DLQ').fill('orders.dlq')
-  await page.getByLabel('Cola destino').fill('orders')
-  await expect(page.getByRole('button', { name: 'Guardar perfil' })).toBeEnabled()
+  await expect(page.getByText('Ruta fija manual')).toBeVisible()
+  await page.getByLabel('Queue origen').fill('orders.dlq')
+  await page.getByLabel('Destino').fill('orders')
+  await expect(page.getByRole('button', { name: 'Guardar ruta fija' })).toBeEnabled()
   await page.getByRole('button', { name: 'Cancelar' }).click()
 })

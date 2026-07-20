@@ -1,15 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { discoveryErrorState, selectRouting, suggestedSourceName } from '../../src/shared/connection-discovery'
+import type { DiscoveredEntity } from '../../src/shared/domain'
+
+const entity = (name: string, messageCount: number, suggestedSource: boolean): DiscoveredEntity => ({
+  key: `queue:${name}`, name, kind: 'queue', parent: null, messageCount, childCount: null,
+  canInspect: true, canTarget: true, suggestedSource
+})
 
 describe('connection discovery state helpers', () => {
   it('only preselects an unambiguous source', () => {
     expect(suggestedSourceName([
-      { name: 'orders', kind: 'queue', messageCount: 0, suggestedSource: false },
-      { name: 'orders.dlq', kind: 'queue', messageCount: 4, suggestedSource: true }
+      entity('orders', 0, false),
+      entity('orders.dlq', 4, true)
     ])).toBe('orders.dlq')
     expect(suggestedSourceName([
-      { name: 'orders.dlq', kind: 'queue', messageCount: 4, suggestedSource: true },
-      { name: 'payments.dlq', kind: 'queue', messageCount: 2, suggestedSource: true }
+      entity('orders.dlq', 4, true),
+      entity('payments.dlq', 2, true)
     ])).toBe('')
   })
 

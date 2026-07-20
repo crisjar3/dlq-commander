@@ -159,7 +159,7 @@ Additional internal file names can change with the bundler. These three entries 
 pnpm package
 ```
 
-Open `release/win-unpacked/DLQCommander.exe` and check Dashboard, Demo, theme changes, and close/reopen behavior. This command is appropriate for local smoke tests.
+Open `release/win-unpacked/DLQCommander.exe` and check Dashboard, Demo Resource Explorer, message inspection, theme changes, and close/reopen behavior. This command is appropriate for local smoke tests.
 
 ### Installer
 

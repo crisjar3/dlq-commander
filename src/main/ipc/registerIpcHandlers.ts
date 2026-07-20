@@ -8,6 +8,7 @@ import type { JobRunner } from '../jobs/JobRunner'
 import type { AuditRepository } from '../persistence/AuditRepository'
 import type { SecretVault } from '../security/SecretVault'
 import type { BrokerDiscoveryService } from '../brokers/BrokerDiscoveryService'
+import type { ResourcePreferenceRepository } from '../persistence/ResourcePreferenceRepository'
 
 interface IpcDependencies {
   profiles: ProfileRepository
@@ -16,6 +17,7 @@ interface IpcDependencies {
   audit: AuditRepository
   vault: SecretVault
   discovery: BrokerDiscoveryService
+  preferences: ResourcePreferenceRepository
 }
 
 type Handler<K extends IpcMethod> = (
@@ -50,13 +52,18 @@ export function registerIpcHandlers(dependencies: IpcDependencies): void {
   })
   register('deleteProfile', async ({ id }) => {
     await dependencies.registry.invalidate(id)
+    dependencies.preferences.deleteForProfile(id)
     return { deleted: dependencies.profiles.delete(id) }
   })
-  register('testProfile', async ({ id }) => dependencies.registry.get(id).testConnection())
+  register('testProfile', async ({ id }) => dependencies.registry.test(id))
   register('discoverEntities', (input) => dependencies.discovery.discover(input))
+  register('listResources', ({ profileId, scope, force }) => dependencies.registry.listResources(profileId, scope, force))
+  register('getDestinationPreference', ({ profileId, source }) => ({
+    target: dependencies.preferences.getDestination(profileId, source)
+  }))
   register('listSources', async ({ profileId }) => dependencies.registry.get(profileId).listSources())
-  register('listMessages', async ({ profileId, sourceId, limit }) =>
-    dependencies.registry.get(profileId).listMessages(sourceId, limit)
+  register('listMessages', async ({ profileId, source, limit }) =>
+    dependencies.registry.get(profileId).listMessages(source, limit)
   )
   register('startRequeue', (input) => dependencies.jobs.start(input))
   register('cancelJob', ({ id }) => dependencies.jobs.cancel(id))

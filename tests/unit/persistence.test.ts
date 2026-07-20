@@ -3,6 +3,7 @@ import { AppDatabase } from '../../src/main/persistence/database'
 import { ProfileRepository } from '../../src/main/persistence/ProfileRepository'
 import { AuditRepository } from '../../src/main/persistence/AuditRepository'
 import { SecretVault, type EncryptionProvider } from '../../src/main/security/SecretVault'
+import { ResourcePreferenceRepository } from '../../src/main/persistence/ResourcePreferenceRepository'
 
 class MemoryEncryption implements EncryptionProvider {
   isEncryptionAvailable(): boolean { return true }
@@ -55,5 +56,15 @@ describe('SQLite repositories', () => {
     expect(audit.list(10)).toMatchObject([
       { action: 'requeue', profileId: 'demo', requested: 2, succeeded: 2, status: 'completed' }
     ])
+  })
+
+  it('remembers a destination per profile and source', () => {
+    database = new AppDatabase(':memory:')
+    const preferences = new ResourcePreferenceRepository(database.connection)
+    const source = { kind: 'subscription' as const, topicName: 'orders', name: 'fulfillment' }
+    preferences.rememberDestination('azure-profile', source, { kind: 'topic', name: 'orders-retry' })
+    expect(preferences.getDestination('azure-profile', source)).toEqual({ kind: 'topic', name: 'orders-retry' })
+    preferences.deleteForProfile('azure-profile')
+    expect(preferences.getDestination('azure-profile', source)).toBeNull()
   })
 })

@@ -1,89 +1,52 @@
-import { useQueries, useQuery } from '@tanstack/react-query'
-import { AlertCircle, ArrowRight, Clock3, Inbox, RefreshCw, Server } from 'lucide-react'
-import type { ConnectionProfile, SourceSummary } from '@shared/domain'
-import { invoke, formatRelative, readableError } from '../lib/api'
-import { StatusBadge } from '../components/StatusBadge'
+import { useQuery } from '@tanstack/react-query'
+import { AlertCircle, ArrowRight, Cloud, DatabaseZap, Eye, EyeOff, Rabbit, RefreshCw, Server, Waypoints } from 'lucide-react'
+import type { BrokerType, ConnectionProfile } from '@shared/domain'
+import { invoke, readableError } from '../lib/api'
 
 interface DashboardViewProps {
-  onInspect: (source: SourceSummary, profile: ConnectionProfile) => void
+  onExplore(profile: ConnectionProfile): void
 }
 
-export function DashboardView({ onInspect }: DashboardViewProps): React.JSX.Element {
+export function DashboardView({ onExplore }: DashboardViewProps): React.JSX.Element {
   const profilesQuery = useQuery({ queryKey: ['profiles'], queryFn: () => invoke('listProfiles', {}) })
   const profiles = profilesQuery.data ?? []
-  const sourceQueries = useQueries({
-    queries: profiles.map((profile) => ({
-      queryKey: ['sources', profile.id],
-      queryFn: () => invoke('listSources', { profileId: profile.id }),
-      refetchInterval: 15_000
-    }))
-  })
-  const sources = sourceQueries.flatMap((query) => query.data ?? [])
-  const totalDepth = sources.reduce((sum, source) => sum + source.depth, 0)
-  const error = profilesQuery.error ?? sourceQueries.find((query) => query.error)?.error
-  const isFetching = profilesQuery.isFetching || sourceQueries.some((query) => query.isFetching)
-  const isInitialLoading = profilesQuery.isLoading || (profiles.length > 0 && sources.length === 0 && sourceQueries.some((query) => query.isLoading))
-
-  const refresh = async (): Promise<void> => {
-    await Promise.all([profilesQuery.refetch(), ...sourceQueries.map((query) => query.refetch())])
-  }
+  const namespaceCount = profiles.filter((profile) => profile.configuration['profileMode'] === 'namespace').length
+  const writableCount = profiles.filter((profile) => !profile.readOnly).length
 
   return (
     <section className="view" aria-labelledby="dashboard-title">
       <header className="view-header">
-        <div>
-          <h1 id="dashboard-title">Colas de mensajes muertos</h1>
-          <p className="view-subtitle">Profundidad y estado actual de los perfiles configurados.</p>
-        </div>
-        <button className="button button-secondary" onClick={() => void refresh()} disabled={isFetching}>
-          <RefreshCw size={16} className={isFetching ? 'spin' : ''} aria-hidden="true" />
-          Actualizar
+        <div><h1 id="dashboard-title">Namespaces conectados</h1><p className="view-subtitle">Abre una conexión para buscar y operar sus recursos.</p></div>
+        <button className="button button-secondary" onClick={() => void profilesQuery.refetch()} disabled={profilesQuery.isFetching}>
+          <RefreshCw size={16} className={profilesQuery.isFetching ? 'spin' : ''} aria-hidden="true" />Actualizar
         </button>
       </header>
 
-      {error ? (
-        <div className="notice notice-error" role="alert">
-          <AlertCircle size={18} aria-hidden="true" />
-          <div><strong>No se pudo actualizar el dashboard.</strong><span>{readableError(error)}</span></div>
-        </div>
-      ) : null}
+      {profilesQuery.error ? <div className="notice notice-error" role="alert"><AlertCircle size={18} /><div><strong>No se pudieron cargar las conexiones.</strong><span>{readableError(profilesQuery.error)}</span></div></div> : null}
 
-      <div className="metric-strip" aria-label="Resumen de dead-letter queues">
-        <div className="metric"><span className="metric-symbol"><Inbox size={18} /></span><div><span>Mensajes pendientes</span><strong>{isInitialLoading ? <span className="skeleton skeleton-number" /> : totalDepth.toLocaleString('es-CR')}</strong></div></div>
-        <div className="metric"><span className="metric-symbol"><Server size={18} /></span><div><span>Fuentes visibles</span><strong>{isInitialLoading ? <span className="skeleton skeleton-number" /> : sources.length}</strong></div></div>
-        <div className="metric"><CheckMetric /><div><span>Perfiles activos</span><strong>{profilesQuery.isLoading ? <span className="skeleton skeleton-number" /> : profiles.length}</strong></div></div>
+      <div className="metric-strip" aria-label="Resumen de conexiones">
+        <div className="metric"><span className="metric-symbol"><Server size={18} /></span><div><span>Conexiones</span><strong>{profiles.length}</strong></div></div>
+        <div className="metric"><span className="metric-symbol"><DatabaseZap size={18} /></span><div><span>Namespaces</span><strong>{namespaceCount}</strong></div></div>
+        <div className="metric"><span className="metric-symbol"><Eye size={18} /></span><div><span>Operaciones habilitadas</span><strong>{writableCount}</strong></div></div>
       </div>
 
       <div className="table-section">
-        <div className="section-heading">
-          <div><h2>Fuentes</h2><span>{isFetching ? 'Consultando brokers...' : `Actualizado ${formatRelative(new Date().toISOString())}`}</span></div>
-        </div>
-        {isInitialLoading ? (
-          <div className="table-skeleton" aria-label="Cargando fuentes" aria-busy="true">
-            {Array.from({ length: 3 }, (_, index) => <div className="skeleton-row" key={index}><span className="skeleton skeleton-wide" /><span className="skeleton" /><span className="skeleton skeleton-short" /><span className="skeleton" /></div>)}
-          </div>
-        ) : sources.length === 0 && !isFetching ? (
-          <div className="empty-state"><Inbox size={28} /><h3>No hay fuentes disponibles</h3><p>Revisa la conexión del perfil o configura una DLQ manual.</p></div>
+        <div className="section-heading"><div><h2>Conexiones</h2><span>{profiles.length} perfiles locales</span></div></div>
+        {profilesQuery.isLoading ? <div className="table-skeleton" aria-label="Cargando conexiones" aria-busy="true">{Array.from({ length: 3 }, (_, index) => <div className="skeleton-row" key={index}><span className="skeleton skeleton-square" /><span className="skeleton skeleton-wide" /><span className="skeleton" /></div>)}</div> : profiles.length === 0 ? (
+          <div className="empty-state"><Server size={28} /><h3>No hay conexiones configuradas</h3><p>Crea una conexión para empezar a explorar recursos.</p></div>
         ) : (
           <div className="data-table-wrap">
-            <table className="data-table">
-              <thead><tr><th>Fuente</th><th>Broker</th><th>Profundidad</th><th>Más antiguo</th><th>Estado</th><th><span className="sr-only">Abrir</span></th></tr></thead>
-              <tbody>
-                {sources.map((source) => {
-                  const profile = profiles.find((candidate) => candidate.id === source.profileId)
-                  if (!profile) return null
-                  return (
-                    <tr key={`${source.profileId}:${source.id}`} className="clickable-row" tabIndex={0} aria-label={`Inspeccionar ${source.displayName}`} onClick={() => onInspect(source, profile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onInspect(source, profile) } }}>
-                      <td><strong>{source.displayName}</strong><span>{profile.name}</span></td>
-                      <td><span className="broker-label">{profile.brokerType === 'azure-service-bus' ? 'Azure Service Bus' : profile.brokerType === 'rabbitmq' ? 'RabbitMQ' : profile.brokerType === 'kafka' ? 'Kafka' : 'Demo'}</span></td>
-                      <td><span className="numeric-strong">{source.depth.toLocaleString('es-CR')}</span></td>
-                      <td><span className="inline-muted"><Clock3 size={14} />{formatRelative(source.oldestMessageAt)}</span></td>
-                      <td><StatusBadge status={source.status} /></td>
-                      <td><button className="icon-button" tabIndex={-1} aria-hidden="true"><ArrowRight size={17} /></button></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
+            <table className="data-table connection-table">
+              <thead><tr><th>Conexión</th><th>Broker</th><th>Modo</th><th>Acceso</th><th><span className="sr-only">Explorar</span></th></tr></thead>
+              <tbody>{profiles.map((profile) => (
+                <tr key={profile.id} className="clickable-row" tabIndex={0} onClick={() => onExplore(profile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onExplore(profile) } }}>
+                  <td><strong>{profile.name}</strong><span>Actualizado localmente</span></td>
+                  <td><span className={`broker-inline broker-${profile.brokerType}`}><BrokerIcon brokerType={profile.brokerType} />{brokerName(profile.brokerType)}</span></td>
+                  <td><span>{profile.configuration['profileMode'] === 'namespace' ? 'Namespace' : 'Ruta fija'}</span></td>
+                  <td><span className="inline-muted">{profile.readOnly ? <Eye size={14} /> : <EyeOff size={14} />}{profile.readOnly ? 'Solo lectura' : 'Requeue habilitado'}</span></td>
+                  <td><button className="icon-button" tabIndex={-1} aria-hidden="true"><ArrowRight size={17} /></button></td>
+                </tr>
+              ))}</tbody>
             </table>
           </div>
         )}
@@ -92,6 +55,16 @@ export function DashboardView({ onInspect }: DashboardViewProps): React.JSX.Elem
   )
 }
 
-function CheckMetric(): React.JSX.Element {
-  return <span className="metric-dot" aria-hidden="true" />
+function BrokerIcon({ brokerType }: { brokerType: BrokerType }): React.JSX.Element {
+  if (brokerType === 'rabbitmq') return <Rabbit size={16} aria-hidden="true" />
+  if (brokerType === 'azure-service-bus') return <Cloud size={16} aria-hidden="true" />
+  if (brokerType === 'kafka') return <Waypoints size={16} aria-hidden="true" />
+  return <DatabaseZap size={16} aria-hidden="true" />
+}
+
+function brokerName(brokerType: BrokerType): string {
+  if (brokerType === 'azure-service-bus') return 'Azure Service Bus'
+  if (brokerType === 'rabbitmq') return 'RabbitMQ'
+  if (brokerType === 'kafka') return 'Apache Kafka'
+  return 'Demo'
 }

@@ -1,15 +1,24 @@
 import { randomUUID } from 'node:crypto'
 import { Kafka, logLevel, type IHeaders, type Producer } from 'kafkajs'
 import { z } from 'zod'
-import { capabilitiesByBroker, type MessagePage, type NormalizedMessage, type SourceSummary } from '@shared/domain'
+import {
+  capabilitiesByBroker,
+  resourceKey,
+  type BrokerResourceRef,
+  type MessagePage,
+  type NormalizedMessage,
+  type SourceSummary,
+  type TargetResourceRef
+} from '@shared/domain'
 import { AppError } from '../core/errors'
 import type { BrokerAdapter, ConnectionTestResult } from './BrokerAdapter'
 import { bodyToText, hashBody } from './normalize'
 
 const configSchema = z.object({
   bootstrapServers: z.string().min(1),
-  dltTopic: z.string().min(1),
-  targetTopic: z.string().min(1),
+  profileMode: z.enum(['namespace', 'fixed']).optional(),
+  dltTopic: z.string().min(1).optional(),
+  targetTopic: z.string().min(1).optional(),
   clientId: z.string().min(1).default('dlq-commander')
 })
 
@@ -50,11 +59,15 @@ export class KafkaAdapter implements BrokerAdapter {
     try {
       await admin.connect()
       const topics = await admin.listTopics()
-      if (!topics.includes(this.config.dltTopic)) {
-        throw new AppError('KAFKA_TOPIC_NOT_FOUND', `No existe el topic DLT ${this.config.dltTopic}`)
-      }
-      if (!topics.includes(this.config.targetTopic)) {
-        throw new AppError('KAFKA_TOPIC_NOT_FOUND', `No existe el topic destino ${this.config.targetTopic}`)
+      if (!this.isNamespaceProfile()) {
+        const sourceName = this.fixedSourceName()
+        const targetName = this.fixedTargetName()
+        if (!topics.includes(sourceName)) {
+          throw new AppError('KAFKA_TOPIC_NOT_FOUND', `No existe el topic DLT ${sourceName}`)
+        }
+        if (!topics.includes(targetName)) {
+          throw new AppError('KAFKA_TOPIC_NOT_FOUND', `No existe el topic destino ${targetName}`)
+        }
       }
       return {
         ok: true,
@@ -67,13 +80,16 @@ export class KafkaAdapter implements BrokerAdapter {
   }
 
   async listSources(): Promise<SourceSummary[]> {
-    const depth = await this.topicDepth(this.config.dltTopic)
+    if (this.isNamespaceProfile()) return []
+    const sourceName = this.fixedSourceName()
+    const depth = await this.topicDepth(sourceName)
     return [{
-      id: this.config.dltTopic,
+      id: resourceKey({ kind: 'topic', name: sourceName }),
+      resource: { kind: 'topic', name: sourceName },
       profileId: this.profileId,
-      name: this.config.dltTopic,
-      displayName: `${this.config.dltTopic} / DLT`,
-      targetName: this.config.targetTopic,
+      name: sourceName,
+      displayName: `${sourceName} / DLT`,
+      targetName: this.config.targetTopic ?? null,
       depth,
       brokerType: 'kafka',
       status: depth > 0 ? 'warning' : 'healthy',
@@ -82,9 +98,10 @@ export class KafkaAdapter implements BrokerAdapter {
     }]
   }
 
-  async listMessages(sourceId: string, limit: number): Promise<MessagePage> {
-    this.assertSource(sourceId)
-    const depth = await this.topicDepth(sourceId)
+  async listMessages(source: BrokerResourceRef, limit: number): Promise<MessagePage> {
+    this.assertSource(source)
+    const sourceName = source.name
+    const depth = await this.topicDepth(sourceName)
     const expectedCount = Math.min(depth, limit)
     if (expectedCount === 0) {
       return {
@@ -105,7 +122,7 @@ export class KafkaAdapter implements BrokerAdapter {
 
     try {
       await consumer.connect()
-      await consumer.subscribe({ topics: [sourceId], fromBeginning: true })
+      await consumer.subscribe({ topics: [sourceName], fromBeginning: true })
       await consumer.run({
         autoCommit: false,
         partitionsConsumedConcurrently: 3,
@@ -145,11 +162,22 @@ export class KafkaAdapter implements BrokerAdapter {
     }
   }
 
-  async requeueMessage(sourceId: string, targetName: string, messageId: string): Promise<void> {
-    this.assertSource(sourceId)
+  async getMessageSnapshots(source: BrokerResourceRef, messageIds: string[]): Promise<NormalizedMessage[]> {
+    this.assertSource(source)
+    const missing = messageIds.filter((id) => !this.cache.has(id))
+    if (missing.length > 0) await this.listMessages(source, 500)
+    return messageIds.flatMap((id) => {
+      const record = this.cache.get(id)
+      return record ? [this.normalize(source.name, record)] : []
+    })
+  }
+
+  async requeueMessage(source: BrokerResourceRef, target: TargetResourceRef, messageId: string): Promise<void> {
+    this.assertSource(source)
+    if (target.kind !== 'topic') throw new AppError('TARGET_NOT_FOUND', 'Kafka solo permite topics como destino')
     let record = this.cache.get(messageId)
     if (!record) {
-      await this.listMessages(sourceId, 500)
+      await this.listMessages(source, 500)
       record = this.cache.get(messageId)
     }
     if (!record) throw new AppError('MESSAGE_NOT_FOUND', `No se encontro el registro Kafka ${messageId}`)
@@ -160,13 +188,13 @@ export class KafkaAdapter implements BrokerAdapter {
       this.producerConnected = true
     }
     await this.producer.send({
-      topic: targetName,
+      topic: target.name,
       messages: [{
         key: record.key,
         value: record.value,
         headers: {
           ...record.headers,
-          'x-dlq-commander-source-topic': sourceId,
+          'x-dlq-commander-source-topic': source.name,
           'x-dlq-commander-source-partition': String(record.partition),
           'x-dlq-commander-source-offset': record.offset,
           'x-dlq-commander-requeued-at': new Date().toISOString()
@@ -238,8 +266,25 @@ export class KafkaAdapter implements BrokerAdapter {
     }
   }
 
-  private assertSource(sourceId: string): void {
-    if (sourceId !== this.config.dltTopic) throw new AppError('SOURCE_NOT_FOUND', `No existe la fuente ${sourceId}`)
+  private isNamespaceProfile(): boolean {
+    return this.config.profileMode === 'namespace'
+  }
+
+  private fixedSourceName(): string {
+    if (!this.config.dltTopic) throw new AppError('SOURCE_NOT_FOUND', 'El perfil fijo no define un topic DLT')
+    return this.config.dltTopic
+  }
+
+  private fixedTargetName(): string {
+    if (!this.config.targetTopic) throw new AppError('TARGET_NOT_FOUND', 'El perfil fijo no define un topic destino')
+    return this.config.targetTopic
+  }
+
+  private assertSource(source: BrokerResourceRef): asserts source is Extract<BrokerResourceRef, { kind: 'topic' }> {
+    if (source.kind !== 'topic') throw new AppError('SOURCE_NOT_FOUND', 'Kafka solo expone topics')
+    if (!this.isNamespaceProfile() && source.name !== this.fixedSourceName()) {
+      throw new AppError('SOURCE_NOT_FOUND', `No existe la fuente ${source.name}`)
+    }
   }
 
   private async delay(ms: number): Promise<void> {

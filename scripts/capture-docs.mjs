@@ -114,12 +114,12 @@ try {
   await page.evaluate(() => localStorage.setItem('dlq-theme', 'light'))
   await page.reload()
   await page.waitForSelector('[data-testid="app-shell"]')
-  await page.getByText('Orders / DLQ').waitFor()
+  await page.getByText('Demo local').waitFor()
 
   await capture(page, 'first-run-01-dashboard.png', [
     page.getByRole('button', { name: 'Dashboard' }),
     page.locator('.metric-strip'),
-    page.locator('.table-section')
+    page.locator('.connection-table')
   ])
 
   await page.getByRole('button', { name: 'Ajustes' }).click()
@@ -139,14 +139,13 @@ try {
   await page.getByLabel('Nombre del perfil').fill('RabbitMQ lab')
   await page.getByLabel('Contraseña').fill('dlqcommander')
   await page.getByRole('button', { name: 'Conectar y buscar' }).click()
-  await page.getByText(/colas encontradas/).waitFor({ timeout: 15_000 })
-  await page.getByRole('combobox', { name: 'Cola destino' }).click()
-  await page.locator('.resource-option').filter({ has: page.getByText('orders', { exact: true }) }).click()
+  await page.getByRole('option', { name: /orders\.dlq/i }).waitFor({ timeout: 15_000 })
+  await page.getByPlaceholder('Buscar queue o topic').fill('orders')
   await scrollModalToBottom(page)
   await capture(page, 'connection-02-discovered-queues.png', [
     page.locator('.routing-status-line'),
-    page.getByRole('combobox', { name: 'Cola DLQ' }),
-    page.getByRole('combobox', { name: 'Cola destino' })
+    page.getByPlaceholder('Buscar queue o topic'),
+    page.getByRole('option', { name: /orders\.dlq/i })
   ], page.locator('.connection-modal'))
   await page.getByRole('button', { name: 'Cancelar' }).click()
 
@@ -156,19 +155,26 @@ try {
   await page.getByRole('button', { name: 'Conectar y buscar' }).click()
   await page.getByText('Permisos insuficientes').waitFor({ timeout: 15_000 })
   await page.getByRole('button', { name: 'Ingresar manualmente' }).click()
-  await page.getByLabel('Cola DLQ').fill('orders.dlq')
-  await page.getByLabel('Cola destino').fill('orders')
+  await page.getByLabel('Queue origen').fill('orders.dlq')
+  await page.getByLabel('Destino').fill('orders')
   await scrollModalToBottom(page)
   await capture(page, 'connection-03-manual-fallback.png', [
-    page.getByText('Entrada manual', { exact: true }),
-    page.getByLabel('Cola DLQ'),
-    page.getByLabel('Cola destino')
+    page.getByText('Ruta fija manual', { exact: true }),
+    page.getByLabel('Queue origen'),
+    page.getByLabel('Destino')
   ], page.locator('.connection-modal'))
   await page.getByRole('button', { name: 'Cancelar' }).click()
 
   await page.getByRole('button', { name: 'Dashboard' }).click()
-  await page.getByText('Orders / DLQ').click()
-  await page.getByRole('heading', { name: 'Orders / DLQ' }).waitFor()
+  await page.getByText('Demo local').click()
+  await page.getByPlaceholder('Buscar queue').fill('payments')
+  await capture(page, 'resource-explorer-01-search.png', [
+    page.getByPlaceholder('Buscar queue'),
+    page.getByRole('option', { name: /payments\.dlq/i })
+  ])
+  await page.getByPlaceholder('Buscar queue').fill('')
+  await page.getByRole('option', { name: /orders\.dlq/i }).click()
+  await page.getByRole('heading', { name: 'orders.dlq' }).waitFor()
   await page.getByLabel(/Seleccionar mensaje demo-orders\.dlq-/).first().waitFor()
   await capture(page, 'inspect-01-message-list.png', [
     page.getByPlaceholder('Filtrar por ID, causa, header o payload'),
@@ -193,9 +199,10 @@ try {
   await page.getByRole('heading', { name: 'Reenviar 1 mensajes' }).waitFor()
   await capture(page, 'requeue-02-confirmation.png', [
     page.locator('.confirm-summary'),
+    page.getByPlaceholder('Buscar destino'),
     page.getByLabel('Máximo por segundo'),
     page.getByRole('button', { name: 'Confirmar requeue' })
-  ], page.locator('.modal-small'))
+  ], page.locator('.requeue-modal'))
 
   await page.getByRole('button', { name: 'Confirmar requeue' }).click()
   await page.getByText('Requeue completado').waitFor({ timeout: 10_000 })

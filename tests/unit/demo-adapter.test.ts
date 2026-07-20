@@ -8,7 +8,7 @@ describe('DemoAdapter', () => {
     expect(sources).toHaveLength(3)
     expect(sources[0]?.profileId).toBe('demo-test')
 
-    const page = await adapter.listMessages('orders.dlq', 10)
+    const page = await adapter.listMessages({ kind: 'queue', name: 'orders.dlq' }, 10)
     expect(page.items).toHaveLength(10)
     expect(page.hasMore).toBe(true)
     expect(page.items[0]?.rawHash).toHaveLength(64)
@@ -16,13 +16,14 @@ describe('DemoAdapter', () => {
 
   it('removes a message only after requeue succeeds', async () => {
     const adapter = new DemoAdapter('demo-test')
-    const before = await adapter.listMessages('payments.dlq', 100)
+    const source = { kind: 'queue' as const, name: 'payments.dlq' }
+    const before = await adapter.listMessages(source, 100)
     const selected = before.items[0]
     expect(selected).toBeDefined()
 
-    await adapter.requeueMessage('payments.dlq', 'payments', selected!.id)
+    await adapter.requeueMessage(source, { kind: 'queue', name: 'payments' }, selected!.id)
 
-    const after = await adapter.listMessages('payments.dlq', 100)
+    const after = await adapter.listMessages(source, 100)
     expect(after.items).toHaveLength(before.items.length - 1)
     expect(after.items.some((message) => message.id === selected!.id)).toBe(false)
   })

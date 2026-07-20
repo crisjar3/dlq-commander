@@ -39,7 +39,7 @@ The integration suite:
 5. consumes from `orders` and compares body and headers;
 6. passes when the message appears in the target without an AMQP exception.
 
-The discovery suite verifies that the Management API returns `orders` and `orders.dlq`. The additional E2E test completes the React form, discovers queues, invalidates results after a virtual-host change, saves an encrypted profile, and runs **Probar**.
+The discovery suite verifies that the Management API returns `orders` and `orders.dlq`. The additional E2E test completes the React form, searches the namespace preview, invalidates results after a virtual-host change, saves an encrypted namespace profile, opens Resource Explorer, and runs **Probar**.
 
 ## Real Kafka
 
@@ -59,7 +59,7 @@ The discovery suite verifies that `orders.events` and `orders.events.dlt` appear
 
 ## Azure Service Bus
 
-Unit tests simulate peek, runtime properties, send, complete, and send failure. The automated external integration covers discovery only.
+Unit tests simulate queue and subscription peek, hierarchical runtime properties, send, complete, and send failure. The automated external integration covers discovery only.
 
 Enable it with:
 
@@ -69,16 +69,16 @@ pnpm test:integration
 Remove-Item Env:AZURE_SERVICE_BUS_CONNECTION_STRING
 ```
 
-The test is skipped when the variable is absent. When present, it must enumerate at least one queue without writing the credential to files, snapshots, or error output.
+The test is skipped when the variable is absent. When present, it must enumerate the namespace root without writing the credential to files, snapshots, or error output.
 
 Real inspection and requeue validation requires a development namespace:
 
-1. create a source queue and target queue;
-2. move a known message to `$DeadLetterQueue`;
-3. confirm that peek does not reduce depth;
-4. requeue and verify arrival in the target;
-5. force a send failure and confirm that the original is not completed;
-6. repeat without `Manage` to verify the depth fallback.
+1. create a source queue, topic/subscription, target queue, and target topic;
+2. move known messages to the queue and subscription `$DeadLetterQueue` paths;
+3. confirm that root discovery lists queues and topics and topic scope lists subscriptions;
+4. confirm that peek does not reduce either DLQ depth;
+5. requeue to a queue and topic and verify arrival;
+6. force a send failure and confirm that the original is not completed.
 
 Never use production as an automated fixture.
 
@@ -86,7 +86,7 @@ Never use production as an automated fixture.
 
 Each test creates a temporary `userData` directory and launches the compiled application. The suite confirms:
 
-- visible Dashboard and Demo sources;
+- visible Dashboard connection and searchable Demo resources;
 - absence of `require` and `process` in the renderer;
 - persistence of Light, Dark, and System themes;
 - message selection, requeue confirmation, and terminal progress;
@@ -100,7 +100,7 @@ The suite keeps one Electron instance for all scenarios and uses temporary `user
 
 - RabbitMQ and Kafka discovery through IPC;
 - persistence, testing, and source listing against real brokers;
-- RabbitMQ profile creation from discovered selectors in the UI;
+- RabbitMQ namespace creation from the searchable resource preview;
 - stale state after connection details change;
 - manual fallback after invalid RabbitMQ credentials.
 

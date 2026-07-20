@@ -6,11 +6,13 @@ The application is intended for SRE operators, platform teams, and developers wh
 
 ## Features
 
-- Dashboard with queue depth, oldest-message age, and source status.
-- Automatic queue and topic discovery before a connection is saved.
+- Connection-oriented Dashboard that remains usable with large namespaces.
+- Virtualized, keyboard-first search across hundreds of queues and topics.
+- Hierarchical Azure exploration with queues, topics, and lazy-loaded subscriptions.
+- Namespace profiles that expose every authorized resource without one profile per queue.
 - Manual entry when a broker does not allow discovery or RabbitMQ Management API is unavailable.
-- Inspector with search, bulk selection, and Payload, Headers, and Metadata views.
-- Requeue with explicit confirmation, throttling, progress, and per-batch results.
+- Inspector with progressive loading, search, bulk selection, and Payload, Headers, and Metadata views.
+- Requeue with searchable destinations, remembered source preferences, throttling, progress, and per-batch results.
 - Local operation audit trail and encrypted snapshots captured before requeue.
 - Read-only profiles by default.
 - System, Light, and Dark themes with a locally persisted preference.
@@ -22,7 +24,7 @@ The application is intended for SRE operators, platform teams, and developers wh
 | --- | --- | --- | --- |
 | RabbitMQ | Management HTTP API | `basic.get` followed by `nack(requeue=true)` | Confirmed publish followed by original-message `ack` |
 | Apache Kafka | KafkaJS Admin | Ephemeral consumer without commits | Append-only copy to the target topic |
-| Azure Service Bus | Runtime properties | `peekMessages` on `$DeadLetterQueue` | Send to target followed by `completeMessage` |
+| Azure Service Bus | Queues, topics, and subscriptions | `peekMessages` on queue or subscription `$DeadLetterQueue` | Send to a queue or topic followed by `completeMessage` |
 | Local Demo | Built-in data | In-memory messages | Removes the message from the demo data set |
 
 The operational differences matter: Kafka keeps the original DLT record after a successful requeue. Read [Broker semantics](docs/broker-semantics.md) before operating on a real source.
@@ -43,7 +45,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-The first launch creates the **Demo local** profile with three sources and sample messages. From the Dashboard, open **Orders / DLQ**, inspect messages, perform a requeue, and review the result under **Auditoría**.
+The first launch creates the **Demo local** profile with three sources and sample messages. Open **Demo local** from the Dashboard, search for `orders.dlq`, inspect messages, perform a requeue, and review the result under **Auditoría**.
 
 Follow the [User guide](docs/user-guide.md) for a complete walkthrough of every screen and operation.
 

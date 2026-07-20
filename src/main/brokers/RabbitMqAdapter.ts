@@ -1,6 +1,14 @@
 import { connect, type ChannelModel, type ConfirmChannel, type GetMessage } from 'amqplib'
 import { z } from 'zod'
-import { capabilitiesByBroker, type MessagePage, type NormalizedMessage, type SourceSummary } from '@shared/domain'
+import {
+  capabilitiesByBroker,
+  resourceKey,
+  type BrokerResourceRef,
+  type MessagePage,
+  type NormalizedMessage,
+  type SourceSummary,
+  type TargetResourceRef
+} from '@shared/domain'
 import { AppError } from '../core/errors'
 import type { BrokerAdapter, ConnectionTestResult } from './BrokerAdapter'
 import { bodyToText, hashBody, stableMessageId } from './normalize'
@@ -10,14 +18,17 @@ const configSchema = z.object({
   port: z.coerce.number().int().positive().default(5672),
   vhost: z.string().default('/'),
   tls: z.union([z.boolean(), z.string()]).transform((value) => value === true || value === 'true').default(false),
-  sourceQueue: z.string().min(1),
-  targetQueue: z.string().min(1)
+  profileMode: z.enum(['namespace', 'fixed']).optional(),
+  sourceQueue: z.string().min(1).optional(),
+  targetQueue: z.string().min(1).optional(),
+  managementUrl: z.string().url().optional()
 })
 const secretSchema = z.object({ username: z.string().min(1), password: z.string() })
 
 export class RabbitMqAdapter implements BrokerAdapter {
   readonly capabilities = capabilitiesByBroker.rabbitmq
   private connection: ChannelModel | null = null
+  private readonly inspectionCache = new Map<string, NormalizedMessage>()
 
   constructor(
     private readonly profileId: string,
@@ -35,23 +46,26 @@ export class RabbitMqAdapter implements BrokerAdapter {
     const startedAt = performance.now()
     const connection = await connect(this.connectionUrl())
     const channel = await connection.createChannel()
-    await channel.checkQueue(this.config.sourceQueue)
+    if (!this.isNamespaceProfile()) await channel.checkQueue(this.fixedSourceName())
     await channel.close()
     await connection.close()
     return { ok: true, latencyMs: Math.round(performance.now() - startedAt), message: 'Conexion y DLQ verificadas' }
   }
 
   async listSources(): Promise<SourceSummary[]> {
+    if (this.isNamespaceProfile()) return []
+    const sourceName = this.fixedSourceName()
     const channel = await this.createChannel()
     try {
-      const queue = await channel.checkQueue(this.config.sourceQueue)
+      const queue = await channel.checkQueue(sourceName)
       return [
         {
-          id: this.config.sourceQueue,
+          id: resourceKey({ kind: 'queue', name: sourceName }),
+          resource: { kind: 'queue', name: sourceName },
           profileId: this.profileId,
-          name: this.config.sourceQueue,
-          displayName: this.config.sourceQueue,
-          targetName: this.config.targetQueue,
+          name: sourceName,
+          displayName: sourceName,
+          targetName: this.config.targetQueue ?? null,
           depth: queue.messageCount,
           brokerType: 'rabbitmq',
           status: queue.messageCount > 0 ? 'warning' : 'healthy',
@@ -64,48 +78,64 @@ export class RabbitMqAdapter implements BrokerAdapter {
     }
   }
 
-  async listMessages(sourceId: string, limit: number): Promise<MessagePage> {
-    this.assertSource(sourceId)
+  async listMessages(source: BrokerResourceRef, limit: number): Promise<MessagePage> {
+    this.assertSource(source)
+    const sourceName = source.name
+    const sourceId = resourceKey(source)
     const channel = await this.createChannel()
     const held: GetMessage[] = []
     const items: NormalizedMessage[] = []
     try {
-      for (let index = 0; index < limit; index += 1) {
-        const raw = await channel.get(sourceId, { noAck: false })
+      for (let index = 0; index < limit + 1; index += 1) {
+        const raw = await channel.get(sourceName, { noAck: false })
         if (!raw) break
         held.push(raw)
-        items.push(this.normalize(sourceId, raw))
+        const normalized = this.normalize(sourceId, raw)
+        items.push(normalized)
+        this.inspectionCache.set(normalized.id, normalized)
       }
     } finally {
       held.forEach((message) => channel.nack(message, false, true))
       await channel.close()
     }
     return {
-      items,
-      hasMore: items.length === limit,
+      items: items.slice(0, limit),
+      hasMore: items.length > limit,
       inspectedAt: new Date().toISOString(),
       warning: 'RabbitMQ no ofrece peek nativo: la inspeccion usa basic.get y devuelve los mensajes con nack/requeue.'
     }
   }
 
-  async requeueMessage(sourceId: string, targetName: string, messageId: string): Promise<void> {
-    this.assertSource(sourceId)
+  async getMessageSnapshots(source: BrokerResourceRef, messageIds: string[]): Promise<NormalizedMessage[]> {
+    this.assertSource(source)
+    const missing = messageIds.filter((id) => !this.inspectionCache.has(id))
+    if (missing.length > 0) await this.listMessages(source, 500)
+    return messageIds.flatMap((id) => {
+      const message = this.inspectionCache.get(id)
+      return message ? [message] : []
+    })
+  }
+
+  async requeueMessage(source: BrokerResourceRef, target: TargetResourceRef, messageId: string): Promise<void> {
+    this.assertSource(source)
+    if (target.kind !== 'queue') throw new AppError('TARGET_NOT_FOUND', 'RabbitMQ solo permite colas como destino')
+    const sourceName = source.name
     const channel = await this.createConfirmChannel()
     const held: GetMessage[] = []
     try {
-      const queue = await channel.checkQueue(sourceId)
+      const queue = await channel.checkQueue(sourceName)
       let found: GetMessage | null = null
       for (let index = 0; index < queue.messageCount; index += 1) {
-        const raw = await channel.get(sourceId, { noAck: false })
+        const raw = await channel.get(sourceName, { noAck: false })
         if (!raw) break
-        if (this.normalize(sourceId, raw).id === messageId) {
+        if (this.normalize(resourceKey(source), raw).id === messageId) {
           found = raw
           break
         }
         held.push(raw)
       }
       if (!found) throw new AppError('MESSAGE_NOT_FOUND', `El mensaje ${messageId} ya no esta disponible`)
-      channel.sendToQueue(targetName, found.content, {
+      channel.sendToQueue(target.name, found.content, {
         ...found.properties,
         headers: { ...found.properties.headers, 'x-dlq-commander-requeued-at': new Date().toISOString() }
       })
@@ -122,6 +152,7 @@ export class RabbitMqAdapter implements BrokerAdapter {
       await this.connection.close()
       this.connection = null
     }
+    this.inspectionCache.clear()
   }
 
   private async getConnection(): Promise<ChannelModel> {
@@ -145,8 +176,20 @@ export class RabbitMqAdapter implements BrokerAdapter {
     return `${protocol}://${username}:${password}@${this.config.host}:${this.config.port}/${vhost}`
   }
 
-  private assertSource(sourceId: string): void {
-    if (sourceId !== this.config.sourceQueue) throw new AppError('SOURCE_NOT_FOUND', `No existe la fuente ${sourceId}`)
+  private isNamespaceProfile(): boolean {
+    return this.config.profileMode === 'namespace'
+  }
+
+  private fixedSourceName(): string {
+    if (!this.config.sourceQueue) throw new AppError('SOURCE_NOT_FOUND', 'El perfil fijo no tiene una cola de origen')
+    return this.config.sourceQueue
+  }
+
+  private assertSource(source: BrokerResourceRef): asserts source is Extract<BrokerResourceRef, { kind: 'queue' }> {
+    if (source.kind !== 'queue') throw new AppError('SOURCE_NOT_FOUND', 'RabbitMQ solo expone colas')
+    if (!this.isNamespaceProfile() && source.name !== this.fixedSourceName()) {
+      throw new AppError('SOURCE_NOT_FOUND', `No existe la fuente ${source.name}`)
+    }
   }
 
   private normalize(sourceId: string, message: GetMessage): NormalizedMessage {

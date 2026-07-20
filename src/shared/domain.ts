@@ -42,8 +42,35 @@ export const connectionProfileInputSchema = z.object({
 })
 export type ConnectionProfileInput = z.infer<typeof connectionProfileInputSchema>
 
+export const brokerResourceRefSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('queue'), name: z.string().trim().min(1) }).strict(),
+  z.object({ kind: z.literal('topic'), name: z.string().trim().min(1) }).strict(),
+  z.object({
+    kind: z.literal('subscription'),
+    topicName: z.string().trim().min(1),
+    name: z.string().trim().min(1)
+  }).strict()
+])
+export type BrokerResourceRef = z.infer<typeof brokerResourceRefSchema>
+
+export const targetResourceRefSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('queue'), name: z.string().trim().min(1) }).strict(),
+  z.object({ kind: z.literal('topic'), name: z.string().trim().min(1) }).strict()
+])
+export type TargetResourceRef = z.infer<typeof targetResourceRefSchema>
+
+export const resourceScopeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('root') }).strict(),
+  z.object({ kind: z.literal('topic'), topicName: z.string().trim().min(1) }).strict()
+])
+export type ResourceScope = z.infer<typeof resourceScopeSchema>
+
+const rootResourceScopeSchema = z.object({ kind: z.literal('root') }).strict().default({ kind: 'root' })
+const azureResourceScopeSchema = resourceScopeSchema.default({ kind: 'root' })
+
 const rabbitDiscoveryInputSchema = z.object({
   brokerType: z.literal('rabbitmq'),
+  scope: rootResourceScopeSchema,
   configuration: z.object({
     host: z.string().trim().min(1),
     port: z.coerce.number().int().min(1).max(65535),
@@ -59,12 +86,14 @@ const rabbitDiscoveryInputSchema = z.object({
 
 const azureDiscoveryInputSchema = z.object({
   brokerType: z.literal('azure-service-bus'),
+  scope: azureResourceScopeSchema,
   configuration: z.object({}).strict(),
   secret: z.object({ connectionString: z.string().trim().min(1) }).strict()
 }).strict()
 
 const kafkaDiscoveryInputSchema = z.object({
   brokerType: z.literal('kafka'),
+  scope: rootResourceScopeSchema,
   configuration: z.object({
     bootstrapServers: z.string().trim().min(1),
     clientId: z.string().trim().min(1)
@@ -77,13 +106,26 @@ export const brokerDiscoveryInputSchema = z.discriminatedUnion('brokerType', [
   azureDiscoveryInputSchema,
   kafkaDiscoveryInputSchema
 ])
-export type BrokerDiscoveryInput = z.infer<typeof brokerDiscoveryInputSchema>
+export type BrokerDiscoveryInput = z.input<typeof brokerDiscoveryInputSchema>
+export type ValidatedBrokerDiscoveryInput = z.output<typeof brokerDiscoveryInputSchema>
 
 export const discoveredEntitySchema = z.object({
+  key: z.string().min(1),
   name: z.string().min(1),
-  kind: z.enum(['queue', 'topic']),
+  kind: z.enum(['queue', 'topic', 'subscription']),
+  parent: z.object({ kind: z.literal('topic'), name: z.string().min(1) }).strict().nullable(),
   messageCount: z.number().int().nonnegative().nullable(),
+  childCount: z.number().int().nonnegative().nullable(),
+  canInspect: z.boolean(),
+  canTarget: z.boolean(),
   suggestedSource: z.boolean()
+}).superRefine((entity, context) => {
+  if (entity.kind === 'subscription' && entity.parent === null) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['parent'], message: 'A subscription requires its parent topic' })
+  }
+  if (entity.kind !== 'subscription' && entity.parent !== null) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['parent'], message: 'Only subscriptions can have a parent topic' })
+  }
 })
 export type DiscoveredEntity = z.infer<typeof discoveredEntitySchema>
 
@@ -95,6 +137,7 @@ export type DiscoveryResult = z.infer<typeof discoveryResultSchema>
 
 export const sourceSummarySchema = z.object({
   id: z.string(),
+  resource: brokerResourceRefSchema,
   profileId: z.string(),
   name: z.string(),
   displayName: z.string(),
@@ -173,6 +216,17 @@ export const appErrorSchema = z.object({
   recoverable: z.boolean()
 })
 export type AppErrorData = z.infer<typeof appErrorSchema>
+
+export function resourceKey(resource: BrokerResourceRef): string {
+  if (resource.kind === 'subscription') {
+    return `subscription:${encodeURIComponent(resource.topicName)}/${encodeURIComponent(resource.name)}`
+  }
+  return `${resource.kind}:${encodeURIComponent(resource.name)}`
+}
+
+export function resourceDisplayName(resource: BrokerResourceRef): string {
+  return resource.kind === 'subscription' ? `${resource.topicName} / ${resource.name}` : resource.name
+}
 
 export const capabilitiesByBroker: Record<BrokerType, BrokerCapabilities> = {
   demo: {

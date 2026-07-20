@@ -11,6 +11,7 @@ import { JobRunner } from './jobs/JobRunner'
 import { emitJobProgress, registerIpcHandlers } from './ipc/registerIpcHandlers'
 import { secureSession, secureWindow } from './security/electronSecurity'
 import { BrokerDiscoveryService } from './brokers/BrokerDiscoveryService'
+import { ResourcePreferenceRepository } from './persistence/ResourcePreferenceRepository'
 
 let mainWindow: BrowserWindow | null = null
 let database: AppDatabase | null = null
@@ -24,8 +25,8 @@ function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 960,
-    minHeight: 640,
+    minWidth: 360,
+    minHeight: 600,
     show: false,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#151a20' : '#f2f4f6',
     title: 'DLQCommander',
@@ -68,10 +69,11 @@ if (!app.requestSingleInstanceLock()) {
     const audit = new AuditRepository(database.connection)
     const archive = new ArchiveRepository(database.connection, vault)
     profiles.seedDemo()
-    registry = new BrokerRegistry(profiles)
     const discovery = new BrokerDiscoveryService()
-    const jobs = new JobRunner(profiles, registry, audit, archive, (job) => emitJobProgress(mainWindow?.webContents ?? null, job))
-    registerIpcHandlers({ profiles, registry, jobs, audit, vault, discovery })
+    const preferences = new ResourcePreferenceRepository(database.connection)
+    registry = new BrokerRegistry(profiles, discovery)
+    const jobs = new JobRunner(profiles, registry, audit, archive, preferences, (job) => emitJobProgress(mainWindow?.webContents ?? null, job))
+    registerIpcHandlers({ profiles, registry, jobs, audit, vault, discovery, preferences })
 
     mainWindow = createMainWindow()
     app.on('activate', () => {

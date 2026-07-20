@@ -14,6 +14,7 @@
     "playwright.config.ts",
     "playwright.brokers.config.ts"
   ],
+  "exclude": ["tests/unit/resource-explorer-list.test.ts"],
   "compilerOptions": {
     "composite": true,
     "strict": true,

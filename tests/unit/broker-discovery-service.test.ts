@@ -41,6 +41,12 @@ describe('BrokerDiscoveryService', () => {
         async *listQueuesRuntimeProperties() {
           yield { name: 'payments', deadLetterMessageCount: 0 }
           yield { name: 'billing', deadLetterMessageCount: 3 }
+        },
+        async *listTopicsRuntimeProperties() {
+          yield { name: 'orders-events', subscriptionCount: 2 }
+        },
+        async *listSubscriptionsRuntimeProperties(topicName: string) {
+          yield { topicName, subscriptionName: 'fulfillment', deadLetterMessageCount: 5 }
         }
       })
     })
@@ -51,10 +57,20 @@ describe('BrokerDiscoveryService', () => {
       secret: { connectionString: 'Endpoint=sb://example/;SharedAccessKeyName=test;SharedAccessKey=secret' }
     })
 
-    expect(result.entities).toEqual([
-      { name: 'billing', kind: 'queue', messageCount: 3, suggestedSource: true },
-      { name: 'payments', kind: 'queue', messageCount: 0, suggestedSource: false }
-    ])
+    expect(result.entities.map((entity) => entity.name)).toEqual(['billing', 'orders-events', 'payments'])
+    expect(result.entities[0]).toMatchObject({ kind: 'queue', messageCount: 3, suggestedSource: true, canInspect: true })
+    expect(result.entities[1]).toMatchObject({ kind: 'topic', childCount: 2, canInspect: false, canTarget: true })
+
+    const subscriptions = await service.discover({
+      brokerType: 'azure-service-bus',
+      scope: { kind: 'topic', topicName: 'orders-events' },
+      configuration: {},
+      secret: { connectionString: 'Endpoint=sb://example/;SharedAccessKeyName=test;SharedAccessKey=secret' }
+    })
+    expect(subscriptions.entities[0]).toMatchObject({
+      name: 'fulfillment', kind: 'subscription', parent: { kind: 'topic', name: 'orders-events' },
+      messageCount: 5, canInspect: true, canTarget: false
+    })
   })
 
   it('filters internal Kafka topics and always disconnects the admin client', async () => {

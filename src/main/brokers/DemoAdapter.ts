@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import { capabilitiesByBroker, type MessagePage, type NormalizedMessage, type SourceSummary } from '@shared/domain'
+import {
+  capabilitiesByBroker,
+  resourceKey,
+  type BrokerResourceRef,
+  type MessagePage,
+  type NormalizedMessage,
+  type SourceSummary,
+  type TargetResourceRef
+} from '@shared/domain'
 import { AppError } from '../core/errors'
 import type { BrokerAdapter, ConnectionTestResult } from './BrokerAdapter'
 import { hashBody } from './normalize'
@@ -61,7 +69,8 @@ export class DemoAdapter implements BrokerAdapter {
 
   async listSources(): Promise<SourceSummary[]> {
     return this.sources.map((source) => ({
-      id: source.id,
+      id: resourceKey({ kind: 'queue', name: source.id }),
+      resource: { kind: 'queue', name: source.id },
       profileId: this.profileId,
       name: source.name,
       displayName: source.displayName,
@@ -74,8 +83,8 @@ export class DemoAdapter implements BrokerAdapter {
     }))
   }
 
-  async listMessages(sourceId: string, limit: number): Promise<MessagePage> {
-    const source = this.findSource(sourceId)
+  async listMessages(resource: BrokerResourceRef, limit: number): Promise<MessagePage> {
+    const source = this.findSource(resource)
     return {
       items: source.messages.slice(0, limit),
       hasMore: source.messages.length > limit,
@@ -84,8 +93,14 @@ export class DemoAdapter implements BrokerAdapter {
     }
   }
 
-  async requeueMessage(sourceId: string, _targetName: string, messageId: string): Promise<void> {
-    const source = this.findSource(sourceId)
+  async getMessageSnapshots(resource: BrokerResourceRef, messageIds: string[]): Promise<NormalizedMessage[]> {
+    const source = this.findSource(resource)
+    const ids = new Set(messageIds)
+    return source.messages.filter((message) => ids.has(message.id))
+  }
+
+  async requeueMessage(resource: BrokerResourceRef, _target: TargetResourceRef, messageId: string): Promise<void> {
+    const source = this.findSource(resource)
     const messageIndex = source.messages.findIndex((message) => message.id === messageId)
     if (messageIndex < 0) throw new AppError('MESSAGE_NOT_FOUND', `El mensaje ${messageId} ya no esta disponible`)
     source.messages.splice(messageIndex, 1)
@@ -93,9 +108,10 @@ export class DemoAdapter implements BrokerAdapter {
 
   async close(): Promise<void> {}
 
-  private findSource(sourceId: string): DemoSource {
-    const source = this.sources.find((candidate) => candidate.id === sourceId)
-    if (!source) throw new AppError('SOURCE_NOT_FOUND', `No existe la fuente ${sourceId}`)
+  private findSource(resource: BrokerResourceRef): DemoSource {
+    if (resource.kind !== 'queue') throw new AppError('SOURCE_NOT_FOUND', 'El entorno demo solo expone colas')
+    const source = this.sources.find((candidate) => candidate.id === resource.name)
+    if (!source) throw new AppError('SOURCE_NOT_FOUND', `No existe la fuente ${resource.name}`)
     return source
   }
 }

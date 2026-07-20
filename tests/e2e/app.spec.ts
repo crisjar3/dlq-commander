@@ -24,8 +24,8 @@ test.afterEach(async () => {
 })
 
 test('starts with a sandboxed renderer and an operational demo dashboard', async () => {
-  await expect(page.getByRole('heading', { name: 'Colas de mensajes muertos' })).toBeVisible()
-  await expect(page.getByText('Orders / DLQ')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Namespaces conectados' })).toBeVisible()
+  await expect(page.getByText('Demo local')).toBeVisible()
   const rendererGlobals = await page.evaluate(() => ({
     requireType: typeof (window as unknown as { require?: unknown }).require,
     processType: typeof (window as unknown as { process?: unknown }).process
@@ -58,8 +58,9 @@ test('persists light, dark and system appearance preferences', async () => {
 })
 
 test('requeues one message and records the completed operation', async () => {
-  await page.getByText('Orders / DLQ').click()
-  await expect(page.getByRole('heading', { name: 'Orders / DLQ' })).toBeVisible()
+  await page.getByText('Demo local').click()
+  await page.getByRole('option', { name: /orders\.dlq/i }).click()
+  await expect(page.getByRole('heading', { name: 'orders.dlq' })).toBeVisible()
   await page.getByLabel(/Seleccionar mensaje demo-orders\.dlq-/).first().check()
   await page.getByRole('button', { name: /Requeue \(1\)/ }).click()
   await expect(page.getByRole('heading', { name: 'Reenviar 1 mensajes' })).toBeVisible()
@@ -70,4 +71,30 @@ test('requeues one message and records the completed operation', async () => {
   await expect(page.getByRole('heading', { name: 'Auditoría' })).toBeVisible()
   await expect(page.getByText('Completado').first()).toBeVisible()
   await expect(page.getByText('1 ok').first()).toBeVisible()
+})
+
+test('searches resources with the keyboard on a compact dark viewport', async () => {
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Emulation.setDeviceMetricsOverride', {
+    width: 375,
+    height: 812,
+    deviceScaleFactor: 1,
+    mobile: false
+  })
+  await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(375)
+  if (await page.evaluate(() => document.documentElement.dataset.theme) !== 'dark') {
+    await page.getByRole('button', { name: 'Activar tema oscuro' }).click()
+  }
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
+  await page.getByText('Demo local').click()
+
+  const search = page.getByRole('combobox', { name: 'Buscar recursos' })
+  await search.fill('payments.dlq')
+  await expect(page.getByText(/1 de \d+/)).toBeVisible()
+  await search.press('Enter')
+  await expect(page.getByRole('heading', { name: 'payments.dlq' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Volver a recursos' }).click()
+  await expect(page.getByRole('heading', { name: 'Explorador de recursos' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
 })

@@ -12,15 +12,16 @@ import {
   Settings,
   Sun
 } from 'lucide-react'
-import type { ConnectionProfile, OperationJob, SourceSummary } from '@shared/domain'
+import type { ConnectionProfile, DiscoveredEntity, OperationJob, SourceSummary } from '@shared/domain'
 import { invoke } from './lib/api'
 import { useTheme, type ResolvedTheme, type ThemePreference } from './lib/theme'
 import { DashboardView } from './views/DashboardView'
 import { ConnectionsView } from './views/ConnectionsView'
 import { InspectorView } from './views/InspectorView'
 import { AuditView } from './views/AuditView'
+import { ResourceExplorerView } from './views/ResourceExplorerView'
 
-type View = 'dashboard' | 'connections' | 'audit' | 'settings' | 'inspector'
+type View = 'dashboard' | 'connections' | 'audit' | 'settings' | 'resources' | 'inspector'
 
 interface InspectorSelection {
   source: SourceSummary
@@ -31,6 +32,8 @@ export function App(): React.JSX.Element {
   const queryClient = useQueryClient()
   const [view, setView] = useState<View>('dashboard')
   const [selection, setSelection] = useState<InspectorSelection | null>(null)
+  const [resourceProfile, setResourceProfile] = useState<ConnectionProfile | null>(null)
+  const [initialResource, setInitialResource] = useState<DiscoveredEntity | null>(null)
   const [activeJob, setActiveJob] = useState<OperationJob | null>(null)
   const { preference, resolvedTheme, setPreference, toggleResolvedTheme } = useTheme()
   const healthQuery = useQuery({ queryKey: ['health'], queryFn: () => invoke('health', {}) })
@@ -48,9 +51,19 @@ export function App(): React.JSX.Element {
   const navigate = (nextView: Exclude<View, 'inspector'>): void => {
     setView(nextView)
     setSelection(null)
+    setResourceProfile(null)
+    setInitialResource(null)
+  }
+
+  const explore = (profile: ConnectionProfile, resource: DiscoveredEntity | null = null): void => {
+    setResourceProfile(profile)
+    setInitialResource(resource)
+    setSelection(null)
+    setView('resources')
   }
 
   const inspect = (source: SourceSummary, profile: ConnectionProfile): void => {
+    setInitialResource(null)
     setSelection({ source, profile })
     setView('inspector')
   }
@@ -61,7 +74,7 @@ export function App(): React.JSX.Element {
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark"><DatabaseZap size={22} /></span><div><strong>DLQCommander</strong><small>Operations console</small></div></div>
       <nav aria-label="Navegación principal">
-        <button title="Dashboard" aria-current={view === 'dashboard' || view === 'inspector' ? 'page' : undefined} className={view === 'dashboard' || view === 'inspector' ? 'active' : ''} onClick={() => navigate('dashboard')}><LayoutDashboard size={19} /><span>Dashboard</span></button>
+        <button title="Dashboard" aria-current={view === 'dashboard' || view === 'resources' || view === 'inspector' ? 'page' : undefined} className={view === 'dashboard' || view === 'resources' || view === 'inspector' ? 'active' : ''} onClick={() => navigate('dashboard')}><LayoutDashboard size={19} /><span>Dashboard</span></button>
         <button title="Conexiones" aria-current={view === 'connections' ? 'page' : undefined} className={view === 'connections' ? 'active' : ''} onClick={() => navigate('connections')}><PlugZap size={19} /><span>Conexiones</span></button>
         <button title="Auditoría" aria-current={view === 'audit' ? 'page' : undefined} className={view === 'audit' ? 'active' : ''} onClick={() => navigate('audit')}><ClipboardList size={19} /><span>Auditoría</span></button>
       </nav>
@@ -72,10 +85,11 @@ export function App(): React.JSX.Element {
       </div>
     </aside>
     <main id="main-content">
-      {view === 'dashboard' ? <DashboardView onInspect={inspect} /> : null}
-      {view === 'connections' ? <ConnectionsView /> : null}
+      {view === 'dashboard' ? <DashboardView onExplore={explore} /> : null}
+      {view === 'connections' ? <ConnectionsView onExplore={explore} /> : null}
       {view === 'audit' ? <AuditView /> : null}
-      {view === 'inspector' && selection ? <InspectorView source={selection.source} profile={selection.profile} activeJob={activeJob} onBack={() => navigate('dashboard')} /> : null}
+      {view === 'resources' && resourceProfile ? <ResourceExplorerView profile={resourceProfile} initialResource={initialResource} onInspect={inspect} onBack={() => navigate('dashboard')} /> : null}
+      {view === 'inspector' && selection ? <InspectorView source={selection.source} profile={selection.profile} activeJob={activeJob} onBack={() => resourceProfile ? setView('resources') : navigate('dashboard')} /> : null}
       {view === 'settings' ? <SettingsView themePreference={preference} resolvedTheme={resolvedTheme} onThemeChange={setPreference} /> : null}
     </main>
   </div>

@@ -30,11 +30,12 @@ describe('RabbitMqAdapter integration', () => {
       const sources = await adapter.listSources()
       expect(sources[0]?.depth).toBeGreaterThan(0)
 
-      const page = await adapter.listMessages('orders.dlq', 100)
+      const source = { kind: 'queue' as const, name: 'orders.dlq' }
+      const page = await adapter.listMessages(source, 100)
       expect(page.warning).toMatch(/no ofrece peek nativo/i)
       expect(page.items.some((message) => message.id === messageId)).toBe(true)
 
-      await adapter.requeueMessage('orders.dlq', 'orders', messageId)
+      await adapter.requeueMessage(source, { kind: 'queue', name: 'orders' }, messageId)
 
       let targetMessage = await channel.get('orders', { noAck: false })
       for (let index = 0; targetMessage && targetMessage.properties.messageId !== messageId && index < 100; index += 1) {

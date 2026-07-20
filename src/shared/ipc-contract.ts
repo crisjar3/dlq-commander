@@ -1,13 +1,16 @@
 import { z } from 'zod'
 import {
   auditEntrySchema,
+  brokerResourceRefSchema,
   brokerDiscoveryInputSchema,
   connectionProfileInputSchema,
   connectionProfileSchema,
   discoveryResultSchema,
   messagePageSchema,
   operationJobSchema,
-  sourceSummarySchema
+  resourceScopeSchema,
+  sourceSummarySchema,
+  targetResourceRefSchema
 } from './domain'
 
 export const ipcContract = {
@@ -41,6 +44,20 @@ export const ipcContract = {
     input: brokerDiscoveryInputSchema,
     output: discoveryResultSchema
   },
+  listResources: {
+    channel: 'resources:list',
+    input: z.object({
+      profileId: z.string(),
+      scope: resourceScopeSchema.default({ kind: 'root' }),
+      force: z.boolean().default(false)
+    }),
+    output: discoveryResultSchema
+  },
+  getDestinationPreference: {
+    channel: 'resources:destination-preference',
+    input: z.object({ profileId: z.string(), source: brokerResourceRefSchema }),
+    output: z.object({ target: targetResourceRefSchema.nullable() })
+  },
   listSources: {
     channel: 'sources:list',
     input: z.object({ profileId: z.string() }),
@@ -48,15 +65,15 @@ export const ipcContract = {
   },
   listMessages: {
     channel: 'messages:list',
-    input: z.object({ profileId: z.string(), sourceId: z.string(), limit: z.number().int().min(1).max(500) }),
+    input: z.object({ profileId: z.string(), source: brokerResourceRefSchema, limit: z.number().int().min(1).max(500) }),
     output: messagePageSchema
   },
   startRequeue: {
     channel: 'operations:requeue',
     input: z.object({
       profileId: z.string(),
-      sourceId: z.string(),
-      targetName: z.string().min(1),
+      source: brokerResourceRefSchema,
+      target: targetResourceRefSchema,
       messageIds: z.array(z.string()).min(1).max(5000),
       throttlePerSecond: z.number().min(0.2).max(100)
     }),

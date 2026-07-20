@@ -6,11 +6,14 @@ import { JobRunner } from '../../src/main/jobs/JobRunner'
 import type { ArchiveRepository } from '../../src/main/persistence/ArchiveRepository'
 import type { AuditRepository } from '../../src/main/persistence/AuditRepository'
 import type { ProfileRepository } from '../../src/main/persistence/ProfileRepository'
+import type { ResourcePreferenceRepository } from '../../src/main/persistence/ResourcePreferenceRepository'
 
 describe('JobRunner', () => {
   it('archives, throttles and reports a successful bulk requeue', async () => {
     const adapter = new DemoAdapter('demo-test')
-    const initialPage = await adapter.listMessages('orders.dlq', 10)
+    const source = { kind: 'queue' as const, name: 'orders.dlq' }
+    const target = { kind: 'queue' as const, name: 'orders' }
+    const initialPage = await adapter.listMessages(source, 10)
     const selectedIds = initialPage.items.slice(0, 2).map((message) => message.id)
     const profile: ConnectionProfile = {
       id: 'demo-test',
@@ -28,12 +31,13 @@ describe('JobRunner', () => {
     const registry = { get: () => adapter } as unknown as BrokerRegistry
     const audit = { write: (entry: unknown) => entry } as unknown as AuditRepository
     const archive = { archive: (_jobId: string, _profileId: string, message: { id: string }) => archived.push(message.id) } as unknown as ArchiveRepository
-    const runner = new JobRunner(profiles, registry, audit, archive, (job) => emitted.push(job))
+    const preferences = { rememberDestination: vi.fn() } as unknown as ResourcePreferenceRepository
+    const runner = new JobRunner(profiles, registry, audit, archive, preferences, (job) => emitted.push(job))
 
     const started = runner.start({
       profileId: profile.id,
-      sourceId: 'orders.dlq',
-      targetName: 'orders',
+      source,
+      target,
       messageIds: selectedIds,
       throttlePerSecond: 100
     })
@@ -45,6 +49,7 @@ describe('JobRunner', () => {
     expect(completed).toMatchObject({ processed: 2, succeeded: 2, failed: 0 })
     expect(archived).toEqual(selectedIds)
     expect(emitted.at(-1)?.status).toBe('completed')
+    expect(preferences.rememberDestination).toHaveBeenCalledWith(profile.id, source, target)
   })
 
   it('rejects operations from a read-only profile', () => {
@@ -57,13 +62,14 @@ describe('JobRunner', () => {
       { get: () => adapter } as unknown as BrokerRegistry,
       { write: (entry: unknown) => entry } as unknown as AuditRepository,
       { archive: () => undefined } as unknown as ArchiveRepository,
+      { rememberDestination: () => undefined } as unknown as ResourcePreferenceRepository,
       () => undefined
     )
 
     expect(() => runner.start({
       profileId: 'demo-test',
-      sourceId: 'orders.dlq',
-      targetName: 'orders',
+      source: { kind: 'queue', name: 'orders.dlq' },
+      target: { kind: 'queue', name: 'orders' },
       messageIds: ['one'],
       throttlePerSecond: 1
     })).toThrow(/solo lectura/i)
