@@ -13,7 +13,7 @@ Usar `safeStorage`, SQLite local, sandbox, perfiles read-only por defecto, confi
 
 ## Alternativas consideradas
 
-Guardar credenciales en texto plano o variables locales reduce implementación pero no es aceptable. Una bóveda remota puede agregarse después para entornos administrados.
+Guardar credenciales en texto plano o variables locales reduce implementación, pero no protege datos en reposo. Una bóveda remota exigiría identidad, disponibilidad de red y administración externa que no pertenecen al límite local del producto.
 
 ## Consecuencias
 

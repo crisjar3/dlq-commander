@@ -24,6 +24,8 @@
     "lab:up": "docker compose up -d --wait",
     "lab:seed": "node scripts/seed-rabbitmq.mjs && node scripts/seed-kafka.mjs",
     "lab:down": "docker compose down",
+    "docs:check": "node scripts/check-docs.mjs",
+    "docs:capture": "pnpm build && node scripts/capture-docs.mjs",
     "package": "pnpm build && electron-builder --dir",
     "dist": "pnpm build && electron-builder",
     "postinstall": "electron --version"

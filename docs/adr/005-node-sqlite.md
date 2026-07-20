@@ -5,7 +5,7 @@
 
 ## Contexto
 
-El plan propuso `better-sqlite3`, pero sus binarios dependen del ABI exacto de Electron. Al actualizar Electron por avisos de seguridad, el addon exigió Python y compiladores locales, haciendo que una instalación limpia dejara de ser reproducible.
+La evaluación inicial usó `better-sqlite3`, pero sus binarios dependen del ABI exacto de Electron. Al actualizar Electron por avisos de seguridad, el addon exigió Python y compiladores locales, haciendo que una instalación limpia dejara de ser reproducible.
 
 ## Decisión
 
@@ -17,7 +17,7 @@ Instalar Python y Visual Studio Build Tools aumenta requisitos globales. Mantene
 
 ## Consecuencias
 
-La aplicación requiere una versión de Electron cuyo runtime incluya `node:sqlite`. Se elimina el addon nativo, la reconstrucción por ABI y el unpack específico de ASAR. Drizzle no se incorpora en el MVP; los repositorios son la frontera de persistencia y permiten añadirlo después sin afectar IPC.
+La aplicación requiere una versión de Electron cuyo runtime incluya `node:sqlite`. Se elimina el addon nativo, la reconstrucción por ABI y el unpack específico de ASAR. Los repositorios son la frontera de persistencia; Drizzle no forma parte de la implementación actual.
 
 ## Validación
 

@@ -13,7 +13,7 @@ Usar Electron, React y TypeScript estricto. El proceso main posee las capacidade
 
 ## Alternativas consideradas
 
-Tauri reduce tamaño, pero añade un segundo lenguaje y wrappers para SDKs JS. Una aplicación web exige un backend adicional para secretos y conectividad privada. Ninguna mejora el MVP lo suficiente para compensar esa complejidad.
+Tauri reduce tamaño, pero añade un segundo lenguaje y wrappers para SDKs JavaScript. Una aplicación web exige un backend adicional para secretos y conectividad privada. Para el alcance actual, ambas alternativas aumentan componentes y responsabilidades operativas.
 
 ## Consecuencias
 

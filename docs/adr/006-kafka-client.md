@@ -8,11 +8,11 @@ Aceptado.
 
 El adapter Kafka debe ejecutarse dentro del proceso principal de Electron 43, tanto durante desarrollo como dentro del paquete ASAR. La primera evaluación usó `@confluentinc/kafka-javascript`: el cliente conectó correctamente desde Node.js, pero la carga de su addon nativo bloqueó el arranque del proceso principal de Electron en este entorno.
 
-El MVP necesita PLAINTEXT local, administración de topics, lectura manual sin commits y producción con headers. No requiere todavía transacciones, Schema Registry ni funciones específicas de librdkafka.
+El adapter necesita PLAINTEXT local, administración de topics, lectura manual sin commits y producción con headers. La interfaz actual no configura transacciones, Schema Registry ni funciones específicas de librdkafka.
 
 ## Decisión
 
-Usar `kafkajs` 2.2.x, un cliente JavaScript sin addon nativo, detrás de `KafkaAdapter`. El dominio y la UI solo dependen de `BrokerAdapter`, por lo que el cliente puede sustituirse más adelante sin cambiar IPC ni vistas.
+Usar `kafkajs` 2.2.x, un cliente JavaScript sin addon nativo, detrás de `KafkaAdapter`. El dominio y la UI dependen de `BrokerAdapter`, no de KafkaJS, y conservan estable el límite IPC.
 
 ## Validación
 
@@ -23,5 +23,5 @@ Usar `kafkajs` 2.2.x, un cliente JavaScript sin addon nativo, detrás de `KafkaA
 ## Consecuencias
 
 - Se evita una dependencia nativa adicional y su matriz de ABI/empaquetado.
-- El perfil inicial cubre PLAINTEXT; TLS y SASL deberán incorporar configuración y pruebas propias.
-- Si se adopta otro cliente, deberá conservar identificadores `topic:partition:offset`, ausencia de commits durante inspección y semántica append-only del requeue.
+- El perfil actual cubre PLAINTEXT; TLS y SASL no están disponibles en la interfaz.
+- El contrato del adapter exige conservar identificadores `topic:partition:offset`, ausencia de commits durante inspección y semántica append-only del requeue, con independencia del cliente interno.

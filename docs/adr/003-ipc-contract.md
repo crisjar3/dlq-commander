@@ -13,7 +13,7 @@ IPC es la frontera de privilegios entre una UI no confiable y operaciones con cr
 
 ## Alternativas consideradas
 
-Canales string manuales son pequeños al inicio, pero no detectan drift ni payloads inválidos. Generar una API HTTP local aumenta superficie de red sin aportar valor al MVP.
+Canales string manuales no detectan drift ni payloads inválidos. Generar una API HTTP local aumenta la superficie de red sin aportar una capacidad necesaria para la aplicación de escritorio.
 
 ## Consecuencias
 

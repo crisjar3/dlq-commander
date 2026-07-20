@@ -5,7 +5,7 @@
 
 ## Contexto
 
-RabbitMQ, Azure Service Bus, Kafka y SQS no comparten inspección, borrado ni redrive equivalentes.
+RabbitMQ, Azure Service Bus y Kafka no comparten inspección, borrado ni redrive equivalentes.
 
 ## Decisión
 
