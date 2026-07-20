@@ -8,11 +8,12 @@ DLQCommander es una consola de escritorio para inspeccionar y reenviar mensajes 
 - Contrato IPC único validado con Zod en entrada y salida.
 - SQLite local con migraciones, perfiles, auditoría y snapshots archivados.
 - Credenciales y snapshots cifrados con `safeStorage` del sistema operativo.
-- RabbitMQ: cola DLQ configurada manualmente, inspección `basic.get` + `nack`, requeue con publisher confirms y `ack` posterior.
-- Kafka: topics DLT y destino configurados manualmente, inspección con consumer efímero sin commits y requeue como copia append-only al destino.
-- Azure Service Bus: peek nativo de DLQ, conteo por runtime properties cuando la credencial tiene permiso `Manage`, requeue send + complete.
+- RabbitMQ: descubrimiento de colas mediante Management API, inspección `basic.get` + `nack`, requeue con publisher confirms y `ack` posterior.
+- Kafka: descubrimiento de topics con KafkaJS Admin, inspección con consumer efímero sin commits y requeue como copia append-only al destino.
+- Azure Service Bus: descubrimiento y conteo de DLQ mediante runtime properties cuando la credencial tiene permiso `Manage`, peek nativo y requeue send + complete.
 - JobRunner en memoria con throttle, progreso, cancelación cooperativa y resultados parciales.
 - UI React con dashboard, conexiones, inspector virtualizado, detalle, confirmación y auditoría.
+- Apariencia clara, oscura o sincronizada con el sistema, persistida localmente y aplicada antes de renderizar la interfaz.
 
 SQS, purge, editar-y-reenviar, auto-update y firma pertenecen a fases siguientes y no se presentan como implementados.
 
@@ -62,6 +63,8 @@ amqp://dlqcommander:dlqcommander@localhost:5672/%2F
 
 La consola de administración queda disponible en [http://localhost:15672](http://localhost:15672) con las mismas credenciales. Este usuario y contraseña son exclusivamente locales.
 
+El descubrimiento de RabbitMQ necesita el Management Plugin y acceso HTTP a su API además del puerto AMQP. DLQCommander deriva `http://{host}:15672` o `https://{host}:15671`; la URL puede sobrescribirse en **Opciones avanzadas** para proxies o puertos personalizados.
+
 ### Kafka
 
 | Campo | Valor |
@@ -99,7 +102,7 @@ pnpm package
 
 - `test:integration` prueba ambos adapters contra los contenedores reales y verifica la entrega en sus destinos.
 - `test:e2e` abre Electron con el broker demo, valida el aislamiento del renderer y comprueba requeue + auditoría.
-- `test:e2e:brokers` crea perfiles RabbitMQ/Kafka desde el renderer y recorre preload, IPC, persistencia, conexión y discovery reales.
+- `test:e2e:brokers` descubre recursos, crea perfiles RabbitMQ/Kafka desde el renderer y recorre preload, IPC, persistencia y conexión reales.
 
 Los comandos de integración requieren haber ejecutado `pnpm lab:up` y `pnpm lab:seed`.
 
