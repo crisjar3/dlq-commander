@@ -10,6 +10,7 @@ playwright-report/
 *.db-wal
 *.tsbuildinfo
 .env
+.local/
 
 # impeccable-ignore-start
 # Ephemeral design review output and local runtime state.
