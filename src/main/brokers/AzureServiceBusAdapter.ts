@@ -1,4 +1,5 @@
 import { ServiceBusAdministrationClient, ServiceBusClient, type ServiceBusReceivedMessage } from '@azure/service-bus'
+import Long from 'long'
 import { z } from 'zod'
 import { capabilitiesByBroker, type MessagePage, type NormalizedMessage, type SourceSummary } from '@shared/domain'
 import { AppError } from '../core/errors'
@@ -10,6 +11,7 @@ const configSchema = z.object({
   targetQueue: z.string().min(1)
 })
 const secretSchema = z.object({ connectionString: z.string().min(1) })
+const peekFromStart = { fromSequenceNumber: Long.ZERO }
 
 export class AzureServiceBusAdapter implements BrokerAdapter {
   readonly capabilities = capabilitiesByBroker['azure-service-bus']
@@ -31,7 +33,7 @@ export class AzureServiceBusAdapter implements BrokerAdapter {
   async testConnection(): Promise<ConnectionTestResult> {
     const startedAt = performance.now()
     const receiver = this.client.createReceiver(this.config.queueName, { subQueueType: 'deadLetter', receiveMode: 'peekLock' })
-    await receiver.peekMessages(1)
+    await receiver.peekMessages(1, peekFromStart)
     await receiver.close()
     return { ok: true, latencyMs: Math.round(performance.now() - startedAt), message: 'Namespace y DLQ verificados' }
   }
@@ -39,7 +41,7 @@ export class AzureServiceBusAdapter implements BrokerAdapter {
   async listSources(): Promise<SourceSummary[]> {
     const receiver = this.client.createReceiver(this.config.queueName, { subQueueType: 'deadLetter', receiveMode: 'peekLock' })
     try {
-      const sample = await receiver.peekMessages(1)
+      const sample = await receiver.peekMessages(1, peekFromStart)
       let depth = sample.length
       try {
         const runtime = await this.administration.getQueueRuntimeProperties(this.config.queueName)
@@ -70,7 +72,7 @@ export class AzureServiceBusAdapter implements BrokerAdapter {
     this.assertSource(sourceId)
     const receiver = this.client.createReceiver(sourceId, { subQueueType: 'deadLetter', receiveMode: 'peekLock' })
     try {
-      const messages = await receiver.peekMessages(limit)
+      const messages = await receiver.peekMessages(limit, peekFromStart)
       return {
         items: messages.map((message) => this.normalize(sourceId, message)),
         hasMore: messages.length === limit,
