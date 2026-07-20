@@ -42,6 +42,57 @@ export const connectionProfileInputSchema = z.object({
 })
 export type ConnectionProfileInput = z.infer<typeof connectionProfileInputSchema>
 
+const rabbitDiscoveryInputSchema = z.object({
+  brokerType: z.literal('rabbitmq'),
+  configuration: z.object({
+    host: z.string().trim().min(1),
+    port: z.coerce.number().int().min(1).max(65535),
+    vhost: z.string().min(1),
+    tls: z.boolean(),
+    managementUrl: z.string().trim().url().optional()
+  }).strict(),
+  secret: z.object({
+    username: z.string().min(1),
+    password: z.string()
+  }).strict()
+}).strict()
+
+const azureDiscoveryInputSchema = z.object({
+  brokerType: z.literal('azure-service-bus'),
+  configuration: z.object({}).strict(),
+  secret: z.object({ connectionString: z.string().trim().min(1) }).strict()
+}).strict()
+
+const kafkaDiscoveryInputSchema = z.object({
+  brokerType: z.literal('kafka'),
+  configuration: z.object({
+    bootstrapServers: z.string().trim().min(1),
+    clientId: z.string().trim().min(1)
+  }).strict(),
+  secret: z.object({}).strict()
+}).strict()
+
+export const brokerDiscoveryInputSchema = z.discriminatedUnion('brokerType', [
+  rabbitDiscoveryInputSchema,
+  azureDiscoveryInputSchema,
+  kafkaDiscoveryInputSchema
+])
+export type BrokerDiscoveryInput = z.infer<typeof brokerDiscoveryInputSchema>
+
+export const discoveredEntitySchema = z.object({
+  name: z.string().min(1),
+  kind: z.enum(['queue', 'topic']),
+  messageCount: z.number().int().nonnegative().nullable(),
+  suggestedSource: z.boolean()
+})
+export type DiscoveredEntity = z.infer<typeof discoveredEntitySchema>
+
+export const discoveryResultSchema = z.object({
+  entities: z.array(discoveredEntitySchema),
+  latencyMs: z.number().int().nonnegative()
+})
+export type DiscoveryResult = z.infer<typeof discoveryResultSchema>
+
 export const sourceSummarySchema = z.object({
   id: z.string(),
   profileId: z.string(),
@@ -135,7 +186,7 @@ export const capabilitiesByBroker: Record<BrokerType, BrokerCapabilities> = {
     inspectionMode: 'demo'
   },
   rabbitmq: {
-    canDiscover: false,
+    canDiscover: true,
     canPeek: true,
     canRequeue: true,
     canBulkRequeue: true,
@@ -145,7 +196,7 @@ export const capabilitiesByBroker: Record<BrokerType, BrokerCapabilities> = {
     inspectionMode: 'receive-and-release'
   },
   'azure-service-bus': {
-    canDiscover: false,
+    canDiscover: true,
     canPeek: true,
     canRequeue: true,
     canBulkRequeue: true,
@@ -155,7 +206,7 @@ export const capabilitiesByBroker: Record<BrokerType, BrokerCapabilities> = {
     inspectionMode: 'native-peek'
   },
   kafka: {
-    canDiscover: false,
+    canDiscover: true,
     canPeek: true,
     canRequeue: true,
     canBulkRequeue: true,

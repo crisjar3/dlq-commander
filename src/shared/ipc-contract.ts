@@ -1,8 +1,10 @@
 import { z } from 'zod'
 import {
   auditEntrySchema,
+  brokerDiscoveryInputSchema,
   connectionProfileInputSchema,
   connectionProfileSchema,
+  discoveryResultSchema,
   messagePageSchema,
   operationJobSchema,
   sourceSummarySchema
@@ -33,6 +35,11 @@ export const ipcContract = {
     channel: 'connections:test',
     input: z.object({ id: z.string() }),
     output: z.object({ ok: z.boolean(), latencyMs: z.number().nonnegative(), message: z.string() })
+  },
+  discoverEntities: {
+    channel: 'connections:discover',
+    input: brokerDiscoveryInputSchema,
+    output: discoveryResultSchema
   },
   listSources: {
     channel: 'sources:list',

@@ -7,7 +7,7 @@
 | Tipos | `pnpm typecheck` | Main, preload, shared y renderer compilan en strict |
 | Lint | `pnpm lint` | Sin errores; renderer no importa Node/Electron |
 | Unitarias | `pnpm test` | Schemas, capabilities, vault y adapters aislados pasan |
-| Integración | `pnpm test:integration` | RabbitMQ y Kafka conectan, inspeccionan y entregan al destino real |
+| Integración | `pnpm test:integration` | RabbitMQ y Kafka descubren recursos, conectan, inspeccionan y entregan al destino real |
 | E2E demo | `pnpm test:e2e` | Electron abre, renderer aislado, requeue y auditoría pasan |
 | E2E brokers | `pnpm test:e2e:brokers` | La UI guarda perfiles y main conecta con ambos brokers reales |
 | Build | `pnpm build` | Artefactos main/preload/renderer se generan |

@@ -4,7 +4,7 @@
 
 | Capacidad | Demo | RabbitMQ | Kafka | Azure Service Bus |
 | --- | --- | --- | --- | --- |
-| Discovery automático | Sí | No, cola manual | No, topics manuales | No, cola manual |
+| Discovery automático | Sí | Sí, Management API | Sí, Kafka Admin | Sí, runtime properties |
 | Inspección | Memoria local | `basic.get` + `nack` | Consumer efímero sin commit | `peekMessages` nativo |
 | Profundidad | Exacta | `checkQueue` exacta | Diferencia entre offsets high/low | Runtime properties con `Manage`; muestra mínima como fallback |
 | Requeue | Elimina del demo | Publish confirm + ack | Copia al topic destino | Send + complete |
@@ -19,11 +19,11 @@ RabbitMQ no ofrece un navegador de cola no destructivo. El inspector toma mensaj
 
 Para requeue, el adapter retiene temporalmente mensajes no seleccionados, publica el elegido en la cola destino, espera publisher confirms y solo entonces hace `ack` del original. Un fallo de publish conserva el original en la DLQ.
 
-El MVP configura una DLQ por perfil. Discovery mediante Management API queda fuera del alcance actual.
+El perfil conserva una DLQ y un destino. Durante su creación, la Management API lista todas las colas del vhost; los nombres DLQ/DLT y las colas con mensajes se priorizan sin ocultar el resto. Si la API no está disponible, la UI permite entrada manual.
 
 ## Kafka
 
-Kafka modela una DLT como un topic ordinario y append-only. El perfil define `bootstrapServers`, `clientId`, `dltTopic` y `targetTopic`; no se intenta descubrir DLTs por nombre.
+Kafka modela una DLT como un topic ordinario y append-only. Durante la creación del perfil, Kafka Admin lista los topics, omite los internos con prefijo `__` y prioriza nombres DLQ/DLT. El perfil guarda `bootstrapServers`, `clientId`, `dltTopic` y `targetTopic`.
 
 El inspector crea un consumer group efímero y único, lee desde el inicio y desactiva commits automáticos. El identificador visible combina `topic:partition:offset`, de modo que cada registro queda localizado sin depender de una clave de negocio. El depth se calcula como la suma de `high - low` para todas las particiones.
 

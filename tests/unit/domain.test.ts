@@ -9,6 +9,9 @@ describe('shared domain contract', () => {
     expect(capabilitiesByBroker.kafka.inspectionMode).toBe('append-only-read')
     expect(capabilitiesByBroker.kafka.canPurge).toBe(false)
     expect(capabilitiesByBroker.demo.canRequeue).toBe(true)
+    expect(capabilitiesByBroker.rabbitmq.canDiscover).toBe(true)
+    expect(capabilitiesByBroker['azure-service-bus'].canDiscover).toBe(true)
+    expect(capabilitiesByBroker.kafka.canDiscover).toBe(true)
   })
 
   it('rejects incomplete profiles at the IPC boundary', () => {
@@ -31,5 +34,19 @@ describe('shared domain contract', () => {
       throttlePerSecond: 101
     })
     expect(oversized.success).toBe(false)
+  })
+
+  it('keeps discovery inputs broker-specific', () => {
+    expect(ipcContract.discoverEntities.input.safeParse({
+      brokerType: 'rabbitmq',
+      configuration: { host: 'localhost', port: 5672, vhost: '/', tls: false },
+      secret: { username: 'guest', password: 'guest' }
+    }).success).toBe(true)
+
+    expect(ipcContract.discoverEntities.input.safeParse({
+      brokerType: 'kafka',
+      configuration: { bootstrapServers: 'localhost:9092', clientId: 'test', connectionString: 'not-allowed' },
+      secret: {}
+    }).success).toBe(false)
   })
 })

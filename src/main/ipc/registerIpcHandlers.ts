@@ -7,6 +7,7 @@ import type { BrokerRegistry } from '../brokers/BrokerRegistry'
 import type { JobRunner } from '../jobs/JobRunner'
 import type { AuditRepository } from '../persistence/AuditRepository'
 import type { SecretVault } from '../security/SecretVault'
+import type { BrokerDiscoveryService } from '../brokers/BrokerDiscoveryService'
 
 interface IpcDependencies {
   profiles: ProfileRepository
@@ -14,6 +15,7 @@ interface IpcDependencies {
   jobs: JobRunner
   audit: AuditRepository
   vault: SecretVault
+  discovery: BrokerDiscoveryService
 }
 
 type Handler<K extends IpcMethod> = (
@@ -51,6 +53,7 @@ export function registerIpcHandlers(dependencies: IpcDependencies): void {
     return { deleted: dependencies.profiles.delete(id) }
   })
   register('testProfile', async ({ id }) => dependencies.registry.get(id).testConnection())
+  register('discoverEntities', (input) => dependencies.discovery.discover(input))
   register('listSources', async ({ profileId }) => dependencies.registry.get(profileId).listSources())
   register('listMessages', async ({ profileId, sourceId, limit }) =>
     dependencies.registry.get(profileId).listMessages(sourceId, limit)

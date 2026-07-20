@@ -5,17 +5,29 @@ export async function invoke<K extends IpcMethod>(method: K, payload: IpcInput<K
 }
 
 export function readableError(error: unknown): string {
+  return parseAppError(error).message
+}
+
+export interface ParsedAppError {
+  code: string
+  message: string
+  recoverable: boolean
+}
+
+export function parseAppError(error: unknown): ParsedAppError {
   const fallback = error instanceof Error ? error.message : String(error)
   const match = fallback.match(/\{"code":.*\}/)
-  if (match) {
-    try {
-      const parsed = JSON.parse(match[0]) as { message?: string }
-      if (parsed.message) return parsed.message
-    } catch {
-      // Fall through to Electron's original message.
+  if (!match) return { code: 'UNEXPECTED_ERROR', message: fallback, recoverable: true }
+  try {
+    const parsed = JSON.parse(match[0]) as Partial<ParsedAppError>
+    return {
+      code: parsed.code ?? 'UNEXPECTED_ERROR',
+      message: parsed.message ?? fallback,
+      recoverable: parsed.recoverable ?? true
     }
+  } catch {
+    return { code: 'UNEXPECTED_ERROR', message: fallback, recoverable: true }
   }
-  return fallback
 }
 
 export function formatDate(value: string | null): string {
