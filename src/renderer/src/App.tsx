@@ -1,8 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, ClipboardList, DatabaseZap, LayoutDashboard, Moon, PlugZap, Settings, Sun } from 'lucide-react'
+import {
+  Activity,
+  ClipboardList,
+  DatabaseZap,
+  LayoutDashboard,
+  Monitor,
+  Moon,
+  Palette,
+  PlugZap,
+  Settings,
+  Sun
+} from 'lucide-react'
 import type { ConnectionProfile, OperationJob, SourceSummary } from '@shared/domain'
 import { invoke } from './lib/api'
+import { useTheme, type ResolvedTheme, type ThemePreference } from './lib/theme'
 import { DashboardView } from './views/DashboardView'
 import { ConnectionsView } from './views/ConnectionsView'
 import { InspectorView } from './views/InspectorView'
@@ -19,14 +31,9 @@ export function App(): React.JSX.Element {
   const queryClient = useQueryClient()
   const [view, setView] = useState<View>('dashboard')
   const [selection, setSelection] = useState<InspectorSelection | null>(null)
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => localStorage.getItem('dlq-theme') === 'dark' ? 'dark' : 'light')
   const [activeJob, setActiveJob] = useState<OperationJob | null>(null)
+  const { preference, resolvedTheme, setPreference, toggleResolvedTheme } = useTheme()
   const healthQuery = useQuery({ queryKey: ['health'], queryFn: () => invoke('health', {}) })
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme
-    localStorage.setItem('dlq-theme', theme)
-  }, [theme])
 
   useEffect(() => window.dlqCommander.onJobProgress((job) => {
     setActiveJob(job)
@@ -48,6 +55,8 @@ export function App(): React.JSX.Element {
     setView('inspector')
   }
 
+  const themeAction = resolvedTheme === 'light' ? 'Activar tema oscuro' : 'Activar tema claro'
+
   return <div className="app-shell" data-testid="app-shell">
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark"><DatabaseZap size={22} /></span><div><strong>DLQCommander</strong><small>Operations console</small></div></div>
@@ -58,7 +67,7 @@ export function App(): React.JSX.Element {
       </nav>
       <div className="sidebar-bottom">
         <button title="Ajustes" aria-current={view === 'settings' ? 'page' : undefined} onClick={() => navigate('settings')} className={view === 'settings' ? 'active' : ''}><Settings size={19} /><span>Ajustes</span></button>
-        <button title={theme === 'light' ? 'Activar tema oscuro' : 'Activar tema claro'} aria-label={theme === 'light' ? 'Activar tema oscuro' : 'Activar tema claro'} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}><span>{theme === 'light' ? <Moon size={19} /> : <Sun size={19} />}</span><span>{theme === 'light' ? 'Tema oscuro' : 'Tema claro'}</span></button>
+        <button title={themeAction} aria-label={themeAction} onClick={toggleResolvedTheme}><span>{resolvedTheme === 'light' ? <Moon size={19} /> : <Sun size={19} />}</span><span>{resolvedTheme === 'light' ? 'Tema oscuro' : 'Tema claro'}</span></button>
         <div className="local-status"><span className={healthQuery.data?.ok ? 'online' : ''} /><div><strong>{healthQuery.data?.ok ? 'Servicio local activo' : 'Conectando servicio'}</strong><small>{healthQuery.data ? `v${healthQuery.data.version} · ${healthQuery.data.encryptionAvailable ? 'Cifrado activo' : 'Sin cifrado'}` : 'Validando IPC'}</small></div></div>
       </div>
     </aside>
@@ -67,7 +76,52 @@ export function App(): React.JSX.Element {
       {view === 'connections' ? <ConnectionsView /> : null}
       {view === 'audit' ? <AuditView /> : null}
       {view === 'inspector' && selection ? <InspectorView source={selection.source} profile={selection.profile} activeJob={activeJob} onBack={() => navigate('dashboard')} /> : null}
-      {view === 'settings' ? <section className="view"><header className="view-header"><div><h1>Ajustes</h1><p className="view-subtitle">Preferencias locales de DLQCommander.</p></div></header><div className="settings-band"><Activity size={20} /><div><strong>Modo conservador</strong><p>Los perfiles nuevos comienzan en solo lectura y cada operación requiere confirmación.</p></div></div></section> : null}
+      {view === 'settings' ? <SettingsView themePreference={preference} resolvedTheme={resolvedTheme} onThemeChange={setPreference} /> : null}
     </main>
   </div>
+}
+
+interface SettingsViewProps {
+  themePreference: ThemePreference
+  resolvedTheme: ResolvedTheme
+  onThemeChange(preference: ThemePreference): void
+}
+
+function SettingsView({ themePreference, resolvedTheme, onThemeChange }: SettingsViewProps): React.JSX.Element {
+  const appearanceStatus = themePreference === 'system'
+    ? `Sistema · ${resolvedTheme === 'dark' ? 'oscuro' : 'claro'}`
+    : themePreference === 'dark' ? 'Oscuro' : 'Claro'
+
+  return (
+    <section className="view" aria-labelledby="settings-title">
+      <header className="view-header"><div><h1 id="settings-title">Ajustes</h1><p className="view-subtitle">Preferencias locales de DLQCommander.</p></div></header>
+      <div className="settings-list">
+        <section className="settings-row" aria-labelledby="appearance-title">
+          <div className="settings-symbol"><Palette size={20} aria-hidden="true" /></div>
+          <div className="settings-copy"><h2 id="appearance-title">Apariencia</h2><p>{appearanceStatus}</p></div>
+          <fieldset className="segmented theme-selector">
+            <legend className="sr-only">Tema de la aplicación</legend>
+            <ThemeOption active={themePreference === 'system'} label="Sistema" icon={<Monitor size={16} />} onClick={() => onThemeChange('system')} />
+            <ThemeOption active={themePreference === 'light'} label="Claro" icon={<Sun size={16} />} onClick={() => onThemeChange('light')} />
+            <ThemeOption active={themePreference === 'dark'} label="Oscuro" icon={<Moon size={16} />} onClick={() => onThemeChange('dark')} />
+          </fieldset>
+        </section>
+        <section className="settings-row" aria-labelledby="safety-title">
+          <div className="settings-symbol"><Activity size={20} aria-hidden="true" /></div>
+          <div className="settings-copy"><h2 id="safety-title">Modo conservador</h2><p>Los perfiles nuevos comienzan en solo lectura y cada operación requiere confirmación.</p></div>
+        </section>
+      </div>
+    </section>
+  )
+}
+
+interface ThemeOptionProps {
+  active: boolean
+  label: string
+  icon: ReactNode
+  onClick(): void
+}
+
+function ThemeOption({ active, label, icon, onClick }: ThemeOptionProps): React.JSX.Element {
+  return <button type="button" className={active ? 'active' : ''} aria-pressed={active} onClick={onClick}>{icon}<span>{label}</span></button>
 }

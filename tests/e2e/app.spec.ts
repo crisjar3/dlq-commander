@@ -33,6 +33,30 @@ test('starts with a sandboxed renderer and an operational demo dashboard', async
   expect(rendererGlobals).toEqual({ requireType: 'undefined', processType: 'undefined' })
 })
 
+test('persists light, dark and system appearance preferences', async () => {
+  await page.getByRole('button', { name: 'Ajustes' }).click()
+  await expect(page.getByRole('heading', { name: 'Ajustes' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Oscuro', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => ({
+    theme: document.documentElement.dataset.theme,
+    preference: document.documentElement.dataset.themePreference,
+    colorScheme: document.documentElement.style.colorScheme
+  }))).toEqual({ theme: 'dark', preference: 'dark', colorScheme: 'dark' })
+
+  await page.reload()
+  await page.waitForSelector('[data-testid="app-shell"]')
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('dlq-theme'))).toBe('dark')
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
+
+  await page.getByRole('button', { name: 'Ajustes' }).click()
+  await page.getByRole('button', { name: 'Claro', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('light')
+
+  await page.getByRole('button', { name: 'Sistema', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.themePreference)).toBe('system')
+})
+
 test('requeues one message and records the completed operation', async () => {
   await page.getByText('Orders / DLQ').click()
   await expect(page.getByRole('heading', { name: 'Orders / DLQ' })).toBeVisible()
