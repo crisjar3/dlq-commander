@@ -1,24 +1,24 @@
-# ADR 003: Contrato IPC validado
+# ADR 003: Validated IPC contract
 
-- Estado: aceptado
-- Fecha: 2026-07-19
+- Status: accepted
+- Date: 2026-07-19
 
-## Contexto
+## Context
 
-IPC es la frontera de privilegios entre una UI no confiable y operaciones con credenciales o mensajes productivos.
+IPC is the privilege boundary between an untrusted UI and operations involving credentials or production messages.
 
-## Decisión
+## Decision
 
-`src/shared/ipc-contract.ts` es la fuente única para canales, input y output. Main y preload validan con Zod. Renderer no importa Electron.
+`src/shared/ipc-contract.ts` is the single source for channels, inputs, and outputs. Main and preload validate with Zod. Renderer code does not import Electron.
 
-## Alternativas consideradas
+## Alternatives considered
 
-Canales string manuales no detectan drift ni payloads inválidos. Generar una API HTTP local aumenta la superficie de red sin aportar una capacidad necesaria para la aplicación de escritorio.
+Manually maintained string channels do not detect drift or invalid payloads. A local HTTP API increases network exposure without adding a capability required by the desktop application.
 
-## Consecuencias
+## Consequences
 
-Cada cambio de contrato puede romper compilación o validación inmediatamente. Zod se empaqueta dentro del preload porque el sandbox no puede resolver dependencias arbitrarias.
+Contract changes fail compilation or runtime validation close to the boundary. Zod is bundled into preload because the sandbox cannot resolve arbitrary dependencies.
 
-## Validación
+## Validation
 
-Typecheck, tests de schemas y E2E de aislamiento deben pasar. ESLint prohíbe imports de Electron y Node en renderer.
+Type checking, schema tests, and renderer-isolation E2E tests must pass. ESLint forbids Electron and Node.js imports in the renderer.

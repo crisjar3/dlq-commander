@@ -1,18 +1,18 @@
-# Desarrollo, pruebas y distribución
+# Development, testing, and distribution
 
-Esta guía permite preparar un entorno limpio, ejecutar DLQCommander, validar brokers y producir artefactos de Windows usando únicamente comandos versionados en el repositorio.
+This guide prepares a clean environment, runs DLQCommander, validates real brokers, and produces Windows artifacts using only versioned repository commands.
 
-## Requisitos
+## Requirements
 
-| Herramienta | Versión o condición | Uso |
+| Tool | Version or condition | Purpose |
 | --- | --- | --- |
-| Windows | 10 u 11 | Ejecución, `safeStorage` y packaging actual |
-| Node.js | `22.x` | Toolchain y runtime de scripts |
-| pnpm | `11.9.0` | Instalación reproducible y scripts |
-| Docker Desktop | Compose v2 | Laboratorio RabbitMQ y Kafka |
-| Git | Versión vigente | Flujo de contribución |
+| Windows | 10 or 11 | Application execution, `safeStorage`, and current packaging |
+| Node.js | `22.x` | Toolchain and script runtime |
+| pnpm | `11.9.0` | Reproducible installation and project scripts |
+| Docker Desktop | Compose v2 | RabbitMQ and Kafka lab |
+| Git | Current supported version | Contribution workflow |
 
-Compruebe versiones:
+Check installed versions:
 
 ```powershell
 node --version
@@ -20,7 +20,7 @@ pnpm --version
 docker compose version
 ```
 
-## Instalación
+## Installation
 
 ```powershell
 git clone https://github.com/crisjar3/dlq-commander.git
@@ -28,69 +28,69 @@ cd dlq-commander
 pnpm install --frozen-lockfile
 ```
 
-`--frozen-lockfile` falla si `package.json` y `pnpm-lock.yaml` no coinciden. Este comportamiento evita resolver versiones diferentes en desarrollo y CI.
+`--frozen-lockfile` fails when `package.json` and `pnpm-lock.yaml` do not match. This prevents development and CI from resolving different dependency versions.
 
-## Desarrollo local
+## Local development
 
 ```powershell
 pnpm dev
 ```
 
-Electron Vite compila main y preload, levanta el servidor del renderer y abre la ventana. Los cambios del renderer se actualizan durante desarrollo. Cierre la ventana o interrumpa el proceso para terminar la sesión.
+Electron Vite compiles main and preload, starts the renderer development server, and opens the application window. Renderer changes update during development. Close the window or interrupt the process to end the session.
 
-Para recorrer la UI sin brokers, use **Demo local**. Para trabajar con adapters reales, prepare el laboratorio antes de abrir la aplicación.
+Use **Demo local** to explore the UI without brokers. Prepare the lab before working with real adapters.
 
-## Laboratorio Docker
+## Docker lab
 
 ```powershell
 pnpm lab:up
 pnpm lab:seed
 ```
 
-`lab:up` ejecuta `docker compose up -d --wait`. El Compose contiene:
+`lab:up` runs `docker compose up -d --wait`. Compose includes:
 
-- RabbitMQ `4.1-management` en `5672` y `15672`, con definiciones precargadas;
-- Kafka `3.9.1` en KRaft, listener de host `9092`;
-- un contenedor de inicialización que crea `orders.events` y `orders.events.dlt`.
+- RabbitMQ `4.1-management` on ports `5672` and `15672`, with definitions preloaded;
+- Kafka `3.9.1` in KRaft mode with host listener `9092`;
+- an initialization container that creates `orders.events` and `orders.events.dlt`.
 
-`lab:seed` publica 20 mensajes en `orders.dlq` y 20 registros en `orders.events.dlt`. Ejecutarlo de nuevo agrega fixtures; no limpia contenido anterior.
+`lab:seed` publishes 20 messages to `orders.dlq` and 20 records to `orders.events.dlt`. Running it again adds fixtures; it does not clear previous content.
 
-Compruebe el estado:
+Check service health:
 
 ```powershell
 docker compose ps
 ```
 
-Detenga y elimine los contenedores:
+Stop and remove the containers:
 
 ```powershell
 pnpm lab:down
 ```
 
-El Compose no declara volúmenes persistentes de datos para los brokers. La configuración local completa se encuentra en [Configuración de brokers](broker-configuration.md).
+Compose does not declare persistent broker data volumes. Complete local values are documented in [Broker configuration](broker-configuration.md).
 
-## Comandos del proyecto
+## Project commands
 
-| Comando | Responsabilidad | Artefacto o resultado |
+| Command | Responsibility | Artifact or result |
 | --- | --- | --- |
-| `pnpm dev` | Ejecutar Electron en modo desarrollo | Ventana interactiva y proceso en terminal |
-| `pnpm typecheck` | Validar TypeScript de Node y renderer | Sin archivos emitidos |
-| `pnpm lint` | Ejecutar ESLint sin warnings permitidos | Reporte en terminal |
-| `pnpm test` | Ejecutar unit tests con Vitest | Resultado de schemas, servicios, adapters y persistencia |
-| `pnpm test:integration` | Probar RabbitMQ/Kafka reales y Azure opt-in | Resultado en terminal |
-| `pnpm test:e2e` | Compilar y recorrer Electron con Demo | Trazas bajo `test-results` cuando falla |
-| `pnpm test:e2e:brokers` | Recorrer discovery y perfiles contra Docker | Trazas bajo `test-results` cuando falla |
-| `pnpm build` | Validar tipos y compilar los tres procesos | `out/main`, `out/preload`, `out/renderer` |
-| `pnpm package` | Construir aplicación desempaquetada | `release/win-unpacked` |
-| `pnpm dist` | Crear distribución NSIS | Instalador y metadatos bajo `release` |
-| `pnpm docs:capture` | Compilar y regenerar capturas tutoriales | `docs/assets/tutorials/*.png` |
-| `pnpm docs:check` | Validar enlaces, imágenes y referencias públicas | Reporte en terminal |
+| `pnpm dev` | Run Electron in development mode | Interactive window and terminal process |
+| `pnpm typecheck` | Validate Node.js and renderer TypeScript | No emitted files |
+| `pnpm lint` | Run ESLint with no warnings allowed | Terminal report |
+| `pnpm test` | Run unit tests with Vitest | Schema, service, adapter, and persistence results |
+| `pnpm test:integration` | Test real RabbitMQ/Kafka and opt-in Azure discovery | Terminal report |
+| `pnpm test:e2e` | Build and exercise Electron with Demo | Traces under `test-results` on failure |
+| `pnpm test:e2e:brokers` | Exercise discovery and profiles against Docker | Traces under `test-results` on failure |
+| `pnpm build` | Type-check and compile all three processes | `out/main`, `out/preload`, `out/renderer` |
+| `pnpm package` | Build an unpacked application | `release/win-unpacked` |
+| `pnpm dist` | Build an NSIS distribution | Installer and metadata under `release` |
+| `pnpm docs:capture` | Build and regenerate tutorial screenshots | `docs/assets/tutorials/*.png` |
+| `pnpm docs:check` | Validate documentation links and images | Terminal report |
 
-`out`, `release`, `test-results` y reportes de Playwright están ignorados por Git. Las capturas de documentación sí se versionan.
+`out`, `release`, `test-results`, and Playwright reports are ignored by Git. Documentation screenshots are versioned.
 
-## Orden de validación
+## Validation order
 
-Para una validación completa:
+Run the complete validation sequence from the repository root:
 
 ```powershell
 pnpm install --frozen-lockfile
@@ -106,23 +106,23 @@ pnpm test:e2e:brokers
 pnpm package
 ```
 
-`test:integration` y `test:e2e:brokers` requieren el laboratorio saludable. El resto no depende de Docker.
+`test:integration` and `test:e2e:brokers` require a healthy lab. The remaining commands do not depend on Docker.
 
-### Azure opt-in
+### Opt-in Azure discovery
 
-La integración de Azure ejecuta discovery únicamente cuando la sesión define una connection string:
+The Azure integration test runs discovery only when the shell defines a connection string:
 
 ```powershell
-$env:AZURE_SERVICE_BUS_CONNECTION_STRING = '<connection-string-de-desarrollo>'
+$env:AZURE_SERVICE_BUS_CONNECTION_STRING = '<development-connection-string>'
 pnpm test:integration
 Remove-Item Env:AZURE_SERVICE_BUS_CONNECTION_STRING
 ```
 
-Use un namespace de desarrollo. La suite no escribe el valor en archivos ni snapshots. La inspección y el requeue de Azure se validan mediante unit tests aislados; el recorrido real con mensajes debe ejecutarse siguiendo la sección Azure de [Matriz de pruebas](testing-matrix.md).
+Use a development namespace. The suite does not write the value to files or snapshots. Isolated unit tests validate Azure inspection and requeue behavior; follow the Azure section in [Testing matrix](testing-matrix.md) for a real-message walkthrough.
 
-## Capturas de tutorial
+## Tutorial screenshots
 
-Las capturas se producen desde la aplicación compilada, con un directorio `userData` temporal y datos del laboratorio local:
+Screenshots are produced from the compiled application with temporary `userData` and local lab fixtures:
 
 ```powershell
 pnpm lab:up
@@ -130,7 +130,9 @@ pnpm lab:seed
 pnpm docs:capture
 ```
 
-El script fija la ventana en `1440x900`, fuerza datos no sensibles y agrega marcadores temporales al DOM. No modifica el código de la UI ni reutiliza perfiles locales. Revise visualmente cada PNG antes de versionarlo.
+The script fixes the window at `1440x900`, uses non-sensitive data, and adds temporary numbered markers to the DOM. It does not modify application UI code or reuse local profiles. Visually review every PNG before committing it.
+
+The screenshots intentionally show the current Spanish UI. English documentation preserves literal control names so the instructions remain traceable to the product.
 
 ## Build
 
@@ -138,7 +140,7 @@ El script fija la ventana en `1440x900`, fuerza datos no sensibles y agrega marc
 pnpm build
 ```
 
-El comando ejecuta primero `pnpm typecheck` y después `electron-vite build`. Un resultado aprobado contiene:
+The command first runs `pnpm typecheck`, then `electron-vite build`. An approved result contains:
 
 ```text
 out/
@@ -147,68 +149,68 @@ out/
   renderer/index.html
 ```
 
-Los nombres internos adicionales pueden cambiar con el bundler. Las tres entradas anteriores representan los límites ejecutables requeridos.
+Additional internal file names can change with the bundler. These three entries represent the required executable boundaries.
 
 ## Packaging
 
-### Aplicación desempaquetada
+### Unpacked application
 
 ```powershell
 pnpm package
 ```
 
-Abra `release/win-unpacked/DLQCommander.exe` y compruebe Dashboard, Demo, tema y cierre/reapertura. Este comando es apropiado para smoke tests locales.
+Open `release/win-unpacked/DLQCommander.exe` and check Dashboard, Demo, theme changes, and close/reopen behavior. This command is appropriate for local smoke tests.
 
-### Instalador
+### Installer
 
 ```powershell
 pnpm dist
 ```
 
-Electron Builder genera un instalador NSIS que permite elegir directorio. La configuración se encuentra en `package.json`. El instalador actual no está firmado; Windows puede mostrar una advertencia de reputación.
+Electron Builder creates an NSIS installer that allows the user to choose an installation directory. Configuration is stored in `package.json`. The current installer is unsigned, so Windows can display a reputation warning.
 
-## Integración continua
+## Continuous integration
 
-`.github/workflows/ci.yml` ejecuta en `windows-latest`:
+`.github/workflows/ci.yml` runs on `windows-latest`:
 
 1. checkout;
-2. configuración de pnpm y Node 22;
-3. instalación con lockfile congelado;
-4. validación de documentación;
-5. typecheck;
-6. lint;
+2. pnpm and Node.js 22 setup;
+3. frozen-lockfile installation;
+4. documentation validation;
+5. type checking;
+6. linting;
 7. unit tests;
-8. E2E con Demo;
-9. packaging desempaquetado.
+8. Demo E2E tests;
+9. unpacked packaging.
 
-Las suites con brokers no forman parte del job público porque requieren Docker y servicios adicionales. Deben aprobarse localmente antes de publicar cambios en adapters o discovery.
+Broker-backed suites are not part of the public job because they require Docker and additional services. Run them locally before publishing changes to adapters or discovery.
 
-## Estructura del repositorio
+## Repository structure
 
-| Ruta | Contenido |
+| Path | Content |
 | --- | --- |
-| `src/main` | Brokers, discovery, jobs, seguridad, IPC y SQLite |
-| `src/preload` | API limitada expuesta mediante `contextBridge` |
-| `src/renderer` | Aplicación React y estilos |
-| `src/shared` | Tipos, schemas, capacidades y contrato IPC |
-| `tests/unit` | Pruebas aisladas |
-| `tests/integration` | Brokers reales y Azure opt-in |
-| `tests/e2e` | Electron con Demo |
-| `tests/e2e-brokers` | Electron contra Docker |
-| `docker` | Definiciones del laboratorio |
-| `scripts` | Seed, validación documental y capturas |
-| `docs` | Documentación pública y recursos gráficos |
+| `src/main` | Brokers, discovery, jobs, security, IPC, and SQLite |
+| `src/preload` | Limited API exposed through `contextBridge` |
+| `src/renderer` | React application and styles |
+| `src/shared` | Types, schemas, capabilities, and IPC contract |
+| `tests/unit` | Isolated tests |
+| `tests/integration` | Real brokers and opt-in Azure discovery |
+| `tests/e2e` | Electron with Demo |
+| `tests/e2e-brokers` | Electron against Docker |
+| `docker` | Lab definitions |
+| `scripts` | Seed, documentation validation, and screenshot automation |
+| `docs` | Public documentation and graphical assets |
 
-## Reglas de contribución
+## Contribution rules
 
-- Use pnpm y conserve `pnpm-lock.yaml` coherente.
-- Mantenga renderer libre de imports de Node y Electron.
-- Valide todo payload IPC con schemas compartidos.
-- No registre credenciales, connection strings ni cuerpos de mensajes reales.
-- Documente la semántica de cualquier operación nueva por broker.
-- Ajuste pruebas según el límite modificado: unitarias para reglas, integración para adapters y E2E para flujos visibles.
-- Ejecute `git diff --check` antes del commit.
+- Use pnpm and keep `pnpm-lock.yaml` consistent.
+- Keep Node.js and Electron imports out of the renderer.
+- Validate every IPC payload with shared schemas.
+- Never log credentials, connection strings, or real message bodies.
+- Document the broker-specific semantics of every new operation.
+- Match tests to the modified boundary: unit tests for rules, integration tests for adapters, and E2E tests for visible workflows.
+- Run `git diff --check` before committing.
 
-## Limitaciones de distribución
+## Distribution limitations
 
-El proyecto produce actualmente artefactos de Windows. No hay configuración de firma, auto-update ni targets para macOS o Linux. Kafka solo expone PLAINTEXT en perfiles. La UI no permite editar perfiles, purgar fuentes ni modificar payloads antes del requeue.
+The project currently produces Windows artifacts. Code signing, automatic updates, macOS targets, and Linux targets are not configured. Kafka profiles expose PLAINTEXT only. The UI cannot edit profiles, purge sources, or change payloads before requeue.

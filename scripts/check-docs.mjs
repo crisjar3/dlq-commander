@@ -43,23 +43,23 @@ for (const file of markdownFiles) {
   for (const match of content.matchAll(markdownLinkPattern)) {
     const [, imageMarker, label, rawTarget] = match
     const isImage = imageMarker === '!'
-    if (isImage && label.trim().length === 0) failures.push(`${relativeFile}: imagen sin texto alternativo (${rawTarget})`)
+    if (isImage && label.trim().length === 0) failures.push(`${relativeFile}: image has no alternative text (${rawTarget})`)
 
     const target = normalizeTarget(rawTarget)
     if (!target || /^(?:https?:|mailto:)/i.test(target)) continue
     const absoluteTarget = resolve(dirname(file), target)
     if (!absoluteTarget.startsWith(root)) {
-      failures.push(`${relativeFile}: enlace fuera del repositorio (${rawTarget})`)
+      failures.push(`${relativeFile}: link points outside the repository (${rawTarget})`)
       continue
     }
-    if (!await exists(absoluteTarget)) failures.push(`${relativeFile}: recurso inexistente (${rawTarget})`)
+    if (!await exists(absoluteTarget)) failures.push(`${relativeFile}: target does not exist (${rawTarget})`)
   }
 }
 
 if (failures.length > 0) {
-  console.error(`Documentación inválida (${failures.length} hallazgos):`)
+  console.error(`Invalid documentation (${failures.length} findings):`)
   for (const failure of failures) console.error(`- ${failure}`)
   process.exitCode = 1
 } else {
-  console.log(`Documentación válida: ${markdownFiles.length} archivos Markdown verificados.`)
+  console.log(`Documentation is valid: ${markdownFiles.length} Markdown files checked.`)
 }

@@ -1,24 +1,24 @@
-# ADR 002: Capacidades explícitas por broker
+# ADR 002: Explicit broker capabilities
 
-- Estado: aceptado
-- Fecha: 2026-07-19
+- Status: accepted
+- Date: 2026-07-19
 
-## Contexto
+## Context
 
-RabbitMQ, Azure Service Bus y Kafka no comparten inspección, borrado ni redrive equivalentes.
+RabbitMQ, Azure Service Bus, and Kafka do not provide equivalent inspection, deletion, or redrive semantics.
 
-## Decisión
+## Decision
 
-Cada adapter declara `BrokerCapabilities`. La UI decide disponibilidad y advertencias desde esas capacidades, no desde una supuesta cola universal.
+Every adapter declares `BrokerCapabilities`. The UI determines action availability and warnings from those capabilities rather than assuming one universal queue model.
 
-## Alternativas consideradas
+## Alternatives considered
 
-Una interfaz uniforme con métodos no soportados simplifica tipos, pero oculta diferencias peligrosas. Condicionales dispersos por nombre de broker producen drift.
+A uniform interface with unsupported methods simplifies types but hides operationally dangerous differences. Broker-name conditionals spread across the UI produce behavior drift.
 
-## Consecuencias
+## Consequences
 
-Agregar un broker exige documentar semántica y capacidades antes de mostrar acciones. Algunas pantallas varían por broker de forma deliberada.
+Every broker adapter must document semantics and capabilities before exposing actions. Some UI behavior deliberately varies by broker.
 
-## Validación
+## Validation
 
-Las pruebas unitarias verifican modos de inspección; la UI deshabilita operaciones no soportadas o perfiles read-only.
+Unit tests verify inspection modes. The UI disables unsupported actions and write operations on read-only profiles.

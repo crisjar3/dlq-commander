@@ -1,55 +1,55 @@
 # DLQCommander
 
-DLQCommander es una consola de escritorio para inspeccionar y reenviar mensajes de dead-letter queues (DLQ) y dead-letter topics (DLT). Centraliza operaciones sobre RabbitMQ, Apache Kafka y Azure Service Bus sin exponer credenciales al renderer ni exigir una plataforma web con acceso a redes privadas.
+DLQCommander is a desktop console for inspecting and requeuing messages from dead-letter queues (DLQs) and dead-letter topics (DLTs). It centralizes operations across RabbitMQ, Apache Kafka, and Azure Service Bus without exposing credentials to the renderer or requiring a web platform with access to private networks.
 
-La aplicación está dirigida a operadores SRE, equipos de plataforma y desarrolladores que necesitan diagnosticar mensajes fallidos, revisar su contenido y ejecutar requeue con confirmación, límite de velocidad y auditoría local.
+The application is intended for SRE operators, platform teams, and developers who need to diagnose failed messages, inspect their contents, and perform controlled requeue operations with confirmation, throttling, and local auditing.
 
-## Características
+## Features
 
-- Dashboard con profundidad, antigüedad y estado de las fuentes configuradas.
-- Descubrimiento automático de colas y topics antes de guardar una conexión.
-- Entrada manual cuando el broker no permite discovery o RabbitMQ Management API no está disponible.
-- Inspector con búsqueda, selección masiva y vistas de Payload, Headers y Metadata.
-- Requeue con confirmación explícita, throttle, progreso y resultado por lote.
-- Auditoría local de operaciones y snapshots cifrados previos al requeue.
-- Perfiles en solo lectura por defecto.
-- Temas Sistema, Claro y Oscuro con preferencia persistida localmente.
-- Perfil Demo local para recorrer la interfaz sin infraestructura externa.
+- Dashboard with queue depth, oldest-message age, and source status.
+- Automatic queue and topic discovery before a connection is saved.
+- Manual entry when a broker does not allow discovery or RabbitMQ Management API is unavailable.
+- Inspector with search, bulk selection, and Payload, Headers, and Metadata views.
+- Requeue with explicit confirmation, throttling, progress, and per-batch results.
+- Local operation audit trail and encrypted snapshots captured before requeue.
+- Read-only profiles by default.
+- System, Light, and Dark themes with a locally persisted preference.
+- Built-in local Demo profile for exploring the UI without external infrastructure.
 
-## Brokers compatibles
+## Supported brokers
 
-| Broker | Discovery | Inspección | Requeue |
+| Broker | Discovery | Inspection | Requeue |
 | --- | --- | --- | --- |
-| RabbitMQ | Management HTTP API | `basic.get` seguido de `nack(requeue=true)` | Publicación confirmada y `ack` del original |
-| Apache Kafka | KafkaJS Admin | Consumer efímero sin commits | Copia append-only al topic destino |
-| Azure Service Bus | Runtime properties | `peekMessages` sobre `$DeadLetterQueue` | Envío al destino y `completeMessage` |
-| Demo local | Datos integrados | Memoria local | Elimina el mensaje del conjunto demo |
+| RabbitMQ | Management HTTP API | `basic.get` followed by `nack(requeue=true)` | Confirmed publish followed by original-message `ack` |
+| Apache Kafka | KafkaJS Admin | Ephemeral consumer without commits | Append-only copy to the target topic |
+| Azure Service Bus | Runtime properties | `peekMessages` on `$DeadLetterQueue` | Send to target followed by `completeMessage` |
+| Local Demo | Built-in data | In-memory messages | Removes the message from the demo data set |
 
-Las diferencias operativas importan: en Kafka el registro original permanece en la DLT después del requeue. Consulte [Semántica por broker](docs/broker-semantics.md) antes de operar una fuente real.
+The operational differences matter: Kafka keeps the original DLT record after a successful requeue. Read [Broker semantics](docs/broker-semantics.md) before operating on a real source.
 
-## Requisitos
+## Requirements
 
-- Windows 10 u 11.
+- Windows 10 or 11.
 - Node.js `22.x`.
 - pnpm `11.9.0`.
-- Docker Desktop para el laboratorio RabbitMQ y Kafka.
+- Docker Desktop for the RabbitMQ and Kafka lab.
 
-El proyecto declara las versiones esperadas en `package.json`. No use npm para instalar dependencias, ya que `pnpm-lock.yaml` es la fuente reproducible del árbol de paquetes.
+The expected versions are declared in `package.json`. Do not use npm to install dependencies because `pnpm-lock.yaml` is the reproducible source of the dependency tree.
 
-## Inicio rápido
+## Quick start
 
 ```powershell
 pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-El primer arranque crea el perfil **Demo local** con tres fuentes y mensajes de ejemplo. Desde el Dashboard puede abrir **Orders / DLQ**, inspeccionar mensajes, ejecutar un requeue y revisar el resultado en **Auditoría**.
+The first launch creates the **Demo local** profile with three sources and sample messages. From the Dashboard, open **Orders / DLQ**, inspect messages, perform a requeue, and review the result under **Auditoría**.
 
-Para conocer cada pantalla y operación, siga la [Guía de usuario](docs/user-guide.md).
+Follow the [User guide](docs/user-guide.md) for a complete walkthrough of every screen and operation.
 
-## Laboratorio local
+## Local broker lab
 
-El laboratorio levanta RabbitMQ con Management Plugin y Kafka en modo KRaft, crea las fuentes esperadas y carga mensajes de prueba:
+The lab starts RabbitMQ with the Management Plugin and Kafka in KRaft mode, creates the expected sources, and publishes test messages:
 
 ```powershell
 pnpm lab:up
@@ -57,15 +57,15 @@ pnpm lab:seed
 pnpm dev
 ```
 
-RabbitMQ queda disponible en `localhost:5672` y su Management API en `http://localhost:15672`. Kafka publica el listener `localhost:9092`. Las credenciales, colas y topics del laboratorio se documentan en [Configuración de brokers](docs/broker-configuration.md).
+RabbitMQ is available at `localhost:5672`, with its Management API at `http://localhost:15672`. Kafka exposes the `localhost:9092` listener. Lab credentials, queues, and topics are documented in [Broker configuration](docs/broker-configuration.md).
 
-Para detener el laboratorio:
+Stop the lab with:
 
 ```powershell
 pnpm lab:down
 ```
 
-## Compilación y distribución
+## Build and distribution
 
 ```powershell
 pnpm build
@@ -73,31 +73,31 @@ pnpm package
 pnpm dist
 ```
 
-- `build` valida tipos y genera `out/main`, `out/preload` y `out/renderer`.
-- `package` crea una aplicación desempaquetada en `release/win-unpacked`.
-- `dist` genera el instalador NSIS en `release`.
+- `build` checks types and generates `out/main`, `out/preload`, and `out/renderer`.
+- `package` creates an unpacked application under `release/win-unpacked`.
+- `dist` creates the NSIS installer under `release`.
 
-La distribución actual no está firmada digitalmente. Consulte [Desarrollo, pruebas y distribución](docs/development.md) para el flujo completo y los artefactos de cada comando.
+The current distribution is not digitally signed. See [Development, testing, and distribution](docs/development.md) for the complete workflow and the artifacts produced by each command.
 
-## Documentación
+## Documentation
 
-- [Índice oficial](docs/README.md)
-- [Guía de usuario y tutoriales visuales](docs/user-guide.md)
-- [Configuración de brokers y permisos](docs/broker-configuration.md)
-- [Arquitectura](docs/architecture.md)
-- [Modelo de seguridad](docs/security-model.md)
-- [Runbook operativo](docs/operations-runbook.md)
-- [Matriz de pruebas](docs/testing-matrix.md)
-- [Decisiones de arquitectura](docs/adr/001-electron-typescript.md)
+- [Documentation index](docs/README.md)
+- [User guide and visual tutorials](docs/user-guide.md)
+- [Broker configuration and permissions](docs/broker-configuration.md)
+- [Architecture](docs/architecture.md)
+- [Security model](docs/security-model.md)
+- [Operations runbook](docs/operations-runbook.md)
+- [Testing matrix](docs/testing-matrix.md)
+- [Architecture decisions](docs/adr/001-electron-typescript.md)
 
-## Limitaciones actuales
+## Current limitations
 
-- Los perfiles guardados se prueban o eliminan; para cambiar su configuración se deben recrear.
-- No existe purge ni edición de payload antes del requeue.
-- Los perfiles Kafka admiten PLAINTEXT; no exponen TLS ni SASL en la interfaz.
-- Amazon SQS no está implementado.
-- No hay actualización automática ni firma de código.
+- Saved profiles can be tested or deleted. To change their configuration, recreate them.
+- Purge and payload editing before requeue are not available.
+- Kafka profiles support PLAINTEXT only; the UI does not expose TLS or SASL.
+- Amazon SQS is not implemented.
+- Automatic updates and code signing are not configured.
 
-## Licencia
+## License
 
 [MIT](LICENSE)

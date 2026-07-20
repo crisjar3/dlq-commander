@@ -1,90 +1,90 @@
-# Semántica por broker
+# Broker semantics
 
-DLQCommander presenta una experiencia común, pero no trata todos los brokers como una cola universal. Este documento define qué significa inspeccionar, medir profundidad y ejecutar requeue en cada adapter.
+DLQCommander provides a shared user experience, but it does not treat every broker as a universal queue. This document defines what inspection, depth, and requeue mean for each adapter.
 
-## Matriz de capacidades
+## Capability matrix
 
-| Capacidad | Demo | RabbitMQ | Kafka | Azure Service Bus |
+| Capability | Demo | RabbitMQ | Kafka | Azure Service Bus |
 | --- | --- | --- | --- | --- |
-| Discovery automático | Datos integrados | Management API | Kafka Admin | Runtime properties |
-| Inspección | Memoria local | `basic.get` + `nack` | Consumer efímero sin commit | `peekMessages` nativo |
-| Profundidad | Exacta en memoria | `checkQueue` exacta | Suma de offsets `high - low` | Runtime properties con `Manage`; muestra como fallback |
-| Requeue | Elimina del conjunto demo | Publish confirm + `ack` | Copia al topic destino | Send + complete |
-| Original tras requeue | Eliminado | Confirmado en la DLQ | Permanece en la DLT | Completado |
-| Selección masiva | Sí | Sí, secuencial | Sí, secuencial | Sí, secuencial |
-| Editar payload | No | No | No | No |
+| Automatic discovery | Built-in data | Management API | Kafka Admin | Runtime properties |
+| Inspection | In-memory | `basic.get` + `nack` | Ephemeral consumer without commits | Native `peekMessages` |
+| Depth | Exact in memory | Exact `checkQueue` value | Sum of `high - low` offsets | Runtime properties with `Manage`; sample fallback |
+| Requeue | Removes from Demo | Confirmed publish + `ack` | Copies to target topic | Send + complete |
+| Original after requeue | Removed | Acknowledged in the DLQ | Remains in the DLT | Completed |
+| Bulk selection | Yes | Yes, sequential | Yes, sequential | Yes, sequential |
+| Payload editing | No | No | No | No |
 | Purge | No | No | No | No |
 
 ## RabbitMQ
 
 ### Discovery
 
-La Management HTTP API lista todas las colas visibles en el virtual host. DLQCommander usa `messages` como contador, prioriza nombres compatibles con DLQ/DLT o colas con mensajes y no oculta el resto. El puerto AMQP no sirve para este discovery; la API HTTP debe ser accesible por separado.
+The Management HTTP API lists every queue visible in the virtual host. DLQCommander uses `messages` as the count, lists queues with messages or DLQ/DLT-like names first, and does not hide the rest. The AMQP port cannot provide this discovery; the HTTP API must be reachable separately.
 
-### Inspección
+### Inspection
 
-RabbitMQ no ofrece al adapter un navegador no destructivo de cola. El Inspector usa `basic.get(noAck=false)` y devuelve cada mensaje con `nack(requeue=true)`. La fuente conserva el mensaje, pero RabbitMQ puede cambiar su posición y marcarlo como redelivered.
+RabbitMQ does not provide this adapter with a non-destructive queue browser. The Inspector calls `basic.get(noAck=false)` and returns every message with `nack(requeue=true)`. The message remains in the source, but RabbitMQ can change its position and mark it as redelivered.
 
-No use inspecciones repetidas cuando el orden estricto sea una condición operativa.
+Avoid repeated inspections when strict ordering is an operational requirement.
 
 ### Requeue
 
-El adapter busca el mensaje, retiene temporalmente los no seleccionados, publica el elegido en la cola destino y espera publisher confirms. Solo después hace `ack` del original. Si la publicación falla, el original no se confirma y vuelve a la DLQ.
+The adapter locates the message, temporarily holds unselected messages, publishes the selected message to the target queue, and waits for publisher confirms. Only then does it acknowledge the original. If publishing fails, the original is not acknowledged and returns to the DLQ.
 
-El resultado reduce la fuente y agrega el mensaje al destino, sujeto a confirmaciones independientes del broker; no es una transacción distribuida.
+The result reduces the source and adds the message to the target, subject to independent broker confirmations. This is not a distributed transaction.
 
 ## Apache Kafka
 
 ### Discovery
 
-Kafka Admin lista topics y excluye nombres internos con prefijo `__`. El protocolo no devuelve un contador por topic durante esta operación, por lo que la lista muestra conteo desconocido. Los nombres DLQ/DLT se priorizan.
+Kafka Admin lists topics and excludes internal names beginning with `__`. The protocol does not return a per-topic message count during this operation, so discovery displays an unknown count. DLQ/DLT-like names are listed first.
 
-### Inspección
+### Inspection
 
-La DLT es un topic ordinario y append-only. El adapter crea un consumer group efímero, lee desde el inicio y desactiva commits automáticos. El ID visible combina `topic:partition:offset` y localiza un registro sin depender de su key.
+A DLT is an ordinary append-only topic. The adapter creates an ephemeral consumer group, reads from the beginning, and disables automatic commits. The visible ID combines `topic:partition:offset`, locating a record without relying on its business key.
 
-La profundidad suma `high - low` en todas las particiones. Representa registros disponibles en el log, no lag de un consumer group de negocio.
+Depth is the sum of `high - low` across every partition. It represents records available in the log, not the lag of a business consumer group.
 
 ### Requeue
 
-Requeue reproduce key, value y headers en el topic destino. También agrega:
+Requeue reproduces the key, value, and headers in the target topic. It also adds:
 
 - `x-dlq-commander-source-topic`;
 - `x-dlq-commander-source-partition`;
 - `x-dlq-commander-source-offset`;
 - `x-dlq-commander-requeued-at`.
 
-El original no se borra ni se modifica. La profundidad de la DLT no disminuye. Para evitar duplicados, correlacione la auditoría con topic, partición y offset antes de repetir una operación.
+The original is neither deleted nor modified. DLT depth does not decrease. Before repeating an operation, correlate audit history with the topic, partition, and offset to avoid duplicate copies.
 
-Los perfiles actuales admiten PLAINTEXT; TLS y SASL no están expuestos en la UI.
+Current profiles support PLAINTEXT; TLS and SASL are not exposed in the UI.
 
 ## Azure Service Bus
 
-### Discovery y profundidad
+### Discovery and depth
 
-`ServiceBusAdministrationClient.listQueuesRuntimeProperties()` enumera colas y entrega `deadLetterMessageCount`. Requiere permiso `Manage`.
+`ServiceBusAdministrationClient.listQueuesRuntimeProperties()` enumerates queues and returns `deadLetterMessageCount`. It requires `Manage` permission.
 
-Después de guardar, el Dashboard intenta `getQueueRuntimeProperties`. Si la credencial no tiene `Manage`, conserva conectividad y muestra como profundidad el tamaño de una muestra obtenida con peek. Ese valor es un mínimo observable, no el total confirmado.
+After a profile is saved, the Dashboard attempts `getQueueRuntimeProperties`. If the credential lacks `Manage`, connectivity remains available and depth falls back to the size of a peeked sample. That value is an observable minimum, not a confirmed total.
 
-### Inspección
+### Inspection
 
-El adapter abre la subcola `deadLetter` y usa `peekMessages` desde el inicio. Peek no bloquea, completa ni retira mensajes.
+The adapter opens the `deadLetter` subqueue and calls `peekMessages` from the beginning. Peek does not lock, complete, or remove messages.
 
 ### Requeue
 
-El adapter recibe mensajes en peek-lock hasta localizar el ID seleccionado. Abandona los no seleccionados, envía el elegido a la cola destino y completa el original después del envío exitoso. Si no puede enviar o localizar el mensaje, no lo completa.
+The adapter receives messages in peek-lock mode until it finds the selected ID. It abandons unselected messages, sends the selected message to the target queue, and completes the original after a successful send. If it cannot send or locate the message, it does not complete it.
 
-## Demo local
+## Local Demo
 
-Demo simula tres fuentes en memoria. Su profundidad es exacta para la sesión. Inspeccionar no modifica datos y requeue elimina el mensaje seleccionado. Al reiniciar el proceso, el adapter vuelve a crear el conjunto inicial.
+Demo simulates three sources in memory. Its depth is exact for the current session. Inspection does not modify data, and requeue removes the selected message. Restarting the process recreates the initial data set.
 
-Demo valida el flujo de interfaz, auditoría y jobs, pero no demuestra conectividad, permisos ni garantías de un broker externo.
+Demo validates UI, audit, and job workflows. It does not prove external broker connectivity, permissions, or delivery guarantees.
 
-## Reglas comunes
+## Common rules
 
-- El perfil configura una fuente y un destino concretos.
-- El Inspector solicita hasta 250 mensajes; el contrato admite un máximo de 500 por página.
-- Requeue procesa la selección secuencialmente con throttle.
-- Un lote con al menos un éxito puede terminar como completado y conservar un contador de fallos.
-- Cerrar la aplicación no revierte publicaciones o completes ya confirmados.
-- Los snapshots cifrados apoyan investigación local, pero no restauran automáticamente mensajes.
+- A profile configures one specific source and one target.
+- The Inspector requests up to 250 messages; the contract allows a maximum of 500 per page.
+- Requeue processes selected messages sequentially with throttling.
+- A batch with at least one success can finish as completed while retaining a nonzero failure count.
+- Closing the application does not revert already confirmed publishes or completes.
+- Encrypted snapshots support local investigation but cannot automatically restore messages.

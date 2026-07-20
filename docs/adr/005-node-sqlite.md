@@ -1,24 +1,24 @@
-# ADR 005: SQLite incluido en el runtime
+# ADR 005: SQLite from the Electron runtime
 
-- Estado: aceptado
-- Fecha: 2026-07-19
+- Status: accepted
+- Date: 2026-07-19
 
-## Contexto
+## Context
 
-La evaluación inicial usó `better-sqlite3`, pero sus binarios dependen del ABI exacto de Electron. Al actualizar Electron por avisos de seguridad, el addon exigió Python y compiladores locales, haciendo que una instalación limpia dejara de ser reproducible.
+The initial evaluation used `better-sqlite3`, whose binaries depend on Electron's exact ABI. Updating Electron for security advisories required Python and local compilers, making a clean installation non-reproducible.
 
-## Decisión
+## Decision
 
-Usar `DatabaseSync` de `node:sqlite`, disponible en el runtime Node incluido por Electron 43. Los repositorios mantienen SQL preparado, WAL, foreign keys y migraciones explícitas.
+Use `DatabaseSync` from `node:sqlite`, available in the Node.js runtime bundled with Electron 43. Repositories retain prepared SQL, WAL, foreign keys, and explicit migrations.
 
-## Alternativas consideradas
+## Alternatives considered
 
-Instalar Python y Visual Studio Build Tools aumenta requisitos globales. Mantener una versión vulnerable de Electron no es aceptable. Un motor WASM evita addons, pero añade persistencia y flushing más complejos en main.
+Requiring Python and Visual Studio Build Tools increases global prerequisites. Keeping a vulnerable Electron version is unacceptable. A WASM database avoids native addons but adds more complex persistence and flushing behavior in main.
 
-## Consecuencias
+## Consequences
 
-La aplicación requiere una versión de Electron cuyo runtime incluya `node:sqlite`. Se elimina el addon nativo, la reconstrucción por ABI y el unpack específico de ASAR. Los repositorios son la frontera de persistencia; Drizzle no forma parte de la implementación actual.
+The application requires an Electron version whose runtime includes `node:sqlite`. The native addon, ABI rebuild, and ASAR unpack requirements disappear. Repositories remain the persistence boundary; Drizzle is not part of the current implementation.
 
-## Validación
+## Validation
 
-Una instalación limpia, tests de repositorio, E2E y el smoke test de `release/win-unpacked` deben pasar con Electron 43.
+A clean installation, repository tests, E2E tests, and the `release/win-unpacked` smoke test must pass with Electron 43.

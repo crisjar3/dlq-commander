@@ -1,22 +1,22 @@
-# Matriz de pruebas
+# Testing matrix
 
-La estrategia combina reglas aisladas, adapters contra brokers reales y recorridos de la aplicación Electron. Ninguna capa reemplaza a las demás: unit tests validan decisiones; integración valida protocolos; E2E valida fronteras y UI.
+The test strategy combines isolated rules, adapters against real brokers, and complete Electron workflows. No layer replaces another: unit tests validate decisions, integration tests validate protocols, and E2E tests validate boundaries and visible behavior.
 
-## Suites y criterios
+## Suites and acceptance criteria
 
-| Capa | Comando | Criterio de aprobación |
+| Layer | Command | Acceptance criterion |
 | --- | --- | --- |
-| Documentación | `pnpm docs:check` | Enlaces y recursos locales existen; imágenes tienen alt text; no hay referencias a archivos privados |
-| Tipos | `pnpm typecheck` | Main, preload, shared y renderer cumplen TypeScript strict |
-| Lint | `pnpm lint` | No hay errores ni warnings; renderer respeta límites de imports |
-| Unitarias | `pnpm test` | Schemas, discovery, vault, jobs, persistencia y adapters aislados pasan |
-| Integración | `pnpm test:integration` | RabbitMQ y Kafka conectan, inspeccionan y entregan al destino; Azure discovery corre solo con variable local |
-| E2E Demo | `pnpm test:e2e` | Electron abre, renderer está aislado, temas persisten y requeue queda auditado |
-| E2E brokers | `pnpm test:e2e:brokers` | Electron descubre recursos, guarda perfiles y prueba RabbitMQ/Kafka reales |
-| Build | `pnpm build` | Se generan main, preload y renderer bajo `out` |
-| Packaging | `pnpm package` | Se crea `release/win-unpacked` con el runtime requerido |
+| Documentation | `pnpm docs:check` | Local links and resources exist, and every image has alt text |
+| Types | `pnpm typecheck` | Main, preload, shared, and renderer satisfy strict TypeScript |
+| Lint | `pnpm lint` | No errors or warnings; renderer import boundaries remain intact |
+| Unit | `pnpm test` | Schemas, discovery, vault, jobs, persistence, and isolated adapters pass |
+| Integration | `pnpm test:integration` | RabbitMQ and Kafka connect, inspect, and deliver to targets; Azure discovery runs only with its local variable |
+| Demo E2E | `pnpm test:e2e` | Electron opens, renderer is isolated, themes persist, and requeue is audited |
+| Broker E2E | `pnpm test:e2e:brokers` | Electron discovers resources, saves profiles, and tests real RabbitMQ/Kafka connections |
+| Build | `pnpm build` | Main, preload, and renderer are generated under `out` |
+| Packaging | `pnpm package` | `release/win-unpacked` is created with the required runtime |
 
-## Preparar integración
+## Prepare integration services
 
 ```powershell
 pnpm lab:up
@@ -24,104 +24,104 @@ pnpm lab:seed
 docker compose ps
 ```
 
-RabbitMQ y Kafka deben aparecer saludables. Cada ejecución de seed agrega datos, por lo que las pruebas usan identificadores únicos y no dependen de una profundidad exacta.
+RabbitMQ and Kafka must report healthy. Every seed run adds data, so tests use unique identifiers and do not rely on an exact depth.
 
-## RabbitMQ real
+## Real RabbitMQ
 
-Conexión de laboratorio: `amqp://dlqcommander:dlqcommander@localhost:5672/%2F`.
+Lab connection: `amqp://dlqcommander:dlqcommander@localhost:5672/%2F`.
 
-La suite de integración:
+The integration suite:
 
-1. publica un mensaje identificado de forma única en `orders.dlq`;
-2. prueba la conexión y obtiene la fuente mediante `RabbitMqAdapter`;
-3. inspecciona hasta localizar el mensaje sin hacer `ack`;
-4. ejecuta requeue y espera publisher confirm antes del `ack` original;
-5. consume `orders` y compara body y headers;
-6. aprueba cuando el mensaje aparece en destino sin excepción AMQP.
+1. publishes a uniquely identified message to `orders.dlq`;
+2. tests the connection and obtains the source through `RabbitMqAdapter`;
+3. inspects until it locates the message without acknowledging it;
+4. performs requeue and waits for publisher confirm before acknowledging the original;
+5. consumes from `orders` and compares body and headers;
+6. passes when the message appears in the target without an AMQP exception.
 
-La suite de discovery verifica que Management API devuelve `orders` y `orders.dlq`. El E2E adicional completa el formulario React, descubre colas, invalida resultados cuando cambia el vhost, guarda un perfil cifrado y ejecuta **Probar**.
+The discovery suite verifies that the Management API returns `orders` and `orders.dlq`. The additional E2E test completes the React form, discovers queues, invalidates results after a virtual-host change, saves an encrypted profile, and runs **Probar**.
 
-## Kafka real
+## Real Kafka
 
-Bootstrap: `localhost:9092`; DLT: `orders.events.dlt`; destino: `orders.events`.
+Bootstrap server: `localhost:9092`; DLT: `orders.events.dlt`; target: `orders.events`.
 
-La suite de integración:
+The integration suite:
 
-1. publica un registro con key e identificador únicos en la DLT;
-2. confirma topics y conectividad con Kafka Admin;
-3. calcula profundidad desde offsets;
-4. inspecciona con un group ID efímero sin commits;
-5. copia el registro al destino preservando key, value y headers;
-6. consume el destino con otro group ID único;
-7. comprueba que la profundidad de la DLT no disminuyó.
+1. publishes a record with a unique key and identifier to the DLT;
+2. confirms topics and connectivity through Kafka Admin;
+3. calculates depth from offsets;
+4. inspects with an ephemeral group ID and no commits;
+5. copies the record to the target while preserving key, value, and headers;
+6. consumes from the target with another unique group ID;
+7. verifies that DLT depth did not decrease.
 
-La suite de discovery verifica que aparecen `orders.events` y `orders.events.dlt` y que no aparecen topics internos. El E2E guarda y prueba un perfil Kafka a través del IPC real de Electron.
+The discovery suite verifies that `orders.events` and `orders.events.dlt` appear and that internal topics do not. E2E saves and tests a Kafka profile through Electron's real IPC boundary.
 
 ## Azure Service Bus
 
-Las unitarias simulan peek, runtime properties, envío, complete y fallo de envío. La integración externa automatizada cubre discovery únicamente.
+Unit tests simulate peek, runtime properties, send, complete, and send failure. The automated external integration covers discovery only.
 
-Para habilitarla:
+Enable it with:
 
 ```powershell
-$env:AZURE_SERVICE_BUS_CONNECTION_STRING = '<connection-string-de-desarrollo>'
+$env:AZURE_SERVICE_BUS_CONNECTION_STRING = '<development-connection-string>'
 pnpm test:integration
 Remove-Item Env:AZURE_SERVICE_BUS_CONNECTION_STRING
 ```
 
-La prueba se omite cuando la variable no existe. Cuando existe, debe enumerar al menos una cola sin escribir la credencial en archivos, snapshots o salida de error.
+The test is skipped when the variable is absent. When present, it must enumerate at least one queue without writing the credential to files, snapshots, or error output.
 
-La validación manual de inspección y requeue requiere un namespace de desarrollo:
+Real inspection and requeue validation requires a development namespace:
 
-1. crear una cola origen y una cola destino;
-2. mover un mensaje conocido a `$DeadLetterQueue`;
-3. confirmar que peek no reduce la profundidad;
-4. reenviar y comprobar aparición en destino;
-5. provocar un fallo de send y comprobar que el original no se completa;
-6. repetir sin `Manage` para verificar el fallback de profundidad.
+1. create a source queue and target queue;
+2. move a known message to `$DeadLetterQueue`;
+3. confirm that peek does not reduce depth;
+4. requeue and verify arrival in the target;
+5. force a send failure and confirm that the original is not completed;
+6. repeat without `Manage` to verify the depth fallback.
 
-No use producción como fixture automatizado.
+Never use production as an automated fixture.
 
-## E2E con Demo
+## Demo E2E
 
-Cada test crea un directorio `userData` temporal y arranca la aplicación compilada. La suite confirma:
+Each test creates a temporary `userData` directory and launches the compiled application. The suite confirms:
 
-- Dashboard y fuentes Demo visibles;
-- ausencia de `require` y `process` en renderer;
-- persistencia de temas Claro, Oscuro y Sistema;
-- selección de un mensaje, confirmación de requeue y progreso terminal;
-- entrada completada en Auditoría.
+- visible Dashboard and Demo sources;
+- absence of `require` and `process` in the renderer;
+- persistence of Light, Dark, and System themes;
+- message selection, requeue confirmation, and terminal progress;
+- a completed Audit entry.
 
-El directorio temporal se elimina al cerrar Electron.
+The temporary directory is deleted when Electron closes.
 
-## E2E con brokers
+## Broker E2E
 
-La suite mantiene una instancia Electron para el conjunto de escenarios y usa un `userData` temporal. Valida:
+The suite keeps one Electron instance for all scenarios and uses temporary `userData`. It validates:
 
-- discovery RabbitMQ y Kafka por IPC;
-- guardado, prueba y listado de fuentes reales;
-- creación RabbitMQ desde la UI con selectores descubiertos;
-- estado obsoleto cuando cambia la conexión;
-- fallback manual ante credenciales RabbitMQ inválidas.
+- RabbitMQ and Kafka discovery through IPC;
+- persistence, testing, and source listing against real brokers;
+- RabbitMQ profile creation from discovered selectors in the UI;
+- stale state after connection details change;
+- manual fallback after invalid RabbitMQ credentials.
 
-## Smoke test de packaging
+## Packaging smoke test
 
-Después de `pnpm package`:
+After `pnpm package`:
 
-1. abra `release/win-unpacked/DLQCommander.exe`;
-2. confirme que Dashboard muestra Demo;
-3. abra un mensaje y cambie el tema;
-4. cierre y vuelva a abrir;
-5. confirme persistencia de base, tema y funcionamiento de preload;
-6. verifique que no aparece una consola ni una navegación externa.
+1. open `release/win-unpacked/DLQCommander.exe`;
+2. confirm that the Dashboard displays Demo;
+3. open a message and change the theme;
+4. close and reopen the application;
+5. confirm database and theme persistence and preload functionality;
+6. verify that no console or external navigation appears.
 
-## Evidencia de cierre
+## Completion evidence
 
-Antes de publicar, conserve en la descripción del cambio:
+Before publishing, include in the change description:
 
-- versiones de Node y pnpm;
-- comandos ejecutados y resultado;
-- estado de Docker para suites reales;
-- confirmación de `git diff --check`;
-- confirmación de que no se versionaron credenciales ni bases locales;
-- cualquier suite omitida y su motivo.
+- Node.js and pnpm versions;
+- commands run and their results;
+- Docker health for broker-backed suites;
+- confirmation that `git diff --check` passed;
+- confirmation that no credentials or local databases were versioned;
+- any skipped suite and its reason.

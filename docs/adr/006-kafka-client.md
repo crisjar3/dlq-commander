@@ -1,27 +1,26 @@
-# ADR 006: Cliente Kafka para Electron
+# ADR 006: Kafka client for Electron
 
-## Estado
+- Status: accepted
+- Date: 2026-07-19
 
-Aceptado.
+## Context
 
-## Contexto
+The Kafka adapter must run inside the Electron 43 main process in development and from the packaged ASAR. An initial evaluation used `@confluentinc/kafka-javascript`: the client connected from Node.js, but its native addon prevented the Electron main process from starting in this environment.
 
-El adapter Kafka debe ejecutarse dentro del proceso principal de Electron 43, tanto durante desarrollo como dentro del paquete ASAR. La primera evaluación usó `@confluentinc/kafka-javascript`: el cliente conectó correctamente desde Node.js, pero la carga de su addon nativo bloqueó el arranque del proceso principal de Electron en este entorno.
+The adapter needs local PLAINTEXT connectivity, topic administration, manual reads without commits, and production with headers. The current UI does not configure transactions, Schema Registry, or librdkafka-specific features.
 
-El adapter necesita PLAINTEXT local, administración de topics, lectura manual sin commits y producción con headers. La interfaz actual no configura transacciones, Schema Registry ni funciones específicas de librdkafka.
+## Decision
 
-## Decisión
+Use `kafkajs` 2.2.x, a JavaScript client without a native addon, behind `KafkaAdapter`. The domain and UI depend on `BrokerAdapter`, not KafkaJS, which keeps the IPC boundary stable.
 
-Usar `kafkajs` 2.2.x, un cliente JavaScript sin addon nativo, detrás de `KafkaAdapter`. El dominio y la UI dependen de `BrokerAdapter`, no de KafkaJS, y conservan estable el límite IPC.
+## Consequences
 
-## Validación
+- The application avoids another native dependency and its ABI and packaging matrix.
+- The current profile supports PLAINTEXT; TLS and SASL are not available in the UI.
+- The adapter contract requires `topic:partition:offset` identifiers, no inspection commits, and append-only requeue semantics regardless of the internal client.
 
-- La prueba de integración conecta a `localhost:9092`, inspecciona la DLT, copia un registro y lo consume del destino.
-- La prueba E2E arranca el binario Electron real, guarda el perfil y ejecuta conexión + discovery mediante IPC.
-- El packaging debe completar sin reconstruir addons Kafka para el ABI de Electron.
+## Validation
 
-## Consecuencias
-
-- Se evita una dependencia nativa adicional y su matriz de ABI/empaquetado.
-- El perfil actual cubre PLAINTEXT; TLS y SASL no están disponibles en la interfaz.
-- El contrato del adapter exige conservar identificadores `topic:partition:offset`, ausencia de commits durante inspección y semántica append-only del requeue, con independencia del cliente interno.
+- The integration test connects to `localhost:9092`, inspects the DLT, copies a record, and consumes it from the target.
+- The E2E test starts the real Electron binary, saves a profile, and performs connection and discovery through IPC.
+- Packaging must complete without rebuilding Kafka addons for Electron's ABI.

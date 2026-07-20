@@ -1,24 +1,24 @@
-# ADR 001: Electron y TypeScript
+# ADR 001: Electron and TypeScript
 
-- Estado: aceptado
-- Fecha: 2026-07-19
+- Status: accepted
+- Date: 2026-07-19
 
-## Contexto
+## Context
 
-La aplicación necesita una UI de escritorio, acceso a SDKs de brokers, almacenamiento local, cifrado ligado al sistema operativo y distribución instalable.
+The application needs a desktop UI, broker SDK access, local persistence, operating-system-backed encryption, and an installable distribution.
 
-## Decisión
+## Decision
 
-Usar Electron, React y TypeScript estricto. El proceso main posee las capacidades privilegiadas; preload expone un contrato mínimo y renderer se limita a UI.
+Use Electron, React, and strict TypeScript. The main process owns privileged capabilities, preload exposes a minimal contract, and the renderer is limited to presentation and user interaction.
 
-## Alternativas consideradas
+## Alternatives considered
 
-Tauri reduce tamaño, pero añade un segundo lenguaje y wrappers para SDKs JavaScript. Una aplicación web exige un backend adicional para secretos y conectividad privada. Para el alcance actual, ambas alternativas aumentan componentes y responsabilidades operativas.
+Tauri produces smaller binaries but adds a second language and wrappers around JavaScript SDKs. A web application requires an additional backend to hold secrets and reach private networks. Both alternatives add components and operational responsibilities for the current scope.
 
-## Consecuencias
+## Consequences
 
-El instalador es más pesado y los módulos nativos deben reconstruirse por versión de Electron. A cambio, todos los SDKs y el dominio comparten TypeScript.
+The installer is larger, and native modules must match the Electron runtime. In return, broker SDKs and the domain model share one TypeScript toolchain.
 
-## Validación
+## Validation
 
-`pnpm build`, `pnpm test:e2e` y `pnpm package` deben pasar en Windows.
+`pnpm build`, `pnpm test:e2e`, and `pnpm package` must pass on Windows.

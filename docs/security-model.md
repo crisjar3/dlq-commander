@@ -1,88 +1,88 @@
-# Modelo de seguridad
+# Security model
 
-## Objetivo y alcance
+## Objective and scope
 
-DLQCommander protege credenciales y snapshots locales mientras separa la interfaz de las operaciones privilegiadas. Este modelo cubre perfiles RabbitMQ, Apache Kafka, Azure Service Bus y Demo local.
+DLQCommander protects local credentials and snapshots while separating the interface from privileged operations. This model covers RabbitMQ, Apache Kafka, Azure Service Bus, and local Demo profiles.
 
-La aplicación actúa con los permisos de las credenciales configuradas. No sustituye los controles de acceso del broker ni implementa autorización interna por usuario.
+The application operates with the permissions granted to configured credentials. It does not replace broker access controls and does not implement internal per-user authorization.
 
-## Límites de confianza
+## Trust boundaries
 
-| Componente | Responsabilidad | Acceso permitido |
+| Component | Responsibility | Allowed access |
 | --- | --- | --- |
-| Renderer | Presentación, filtros y captura de intención | API limitada de preload |
-| Preload | Validar y transportar mensajes IPC | `contextBridge` e `ipcRenderer` por canales definidos |
-| Main | Brokers, SQLite, cifrado, jobs y auditoría | Node, Electron y SDKs |
-| Broker externo | Fuente y destino de mensajes | Solo mediante su adapter |
+| Renderer | Presentation, filtering, and user-intent capture | Limited preload API |
+| Preload | Validate and transport IPC messages | `contextBridge` and defined `ipcRenderer` channels |
+| Main | Brokers, SQLite, encryption, jobs, and audit | Node.js, Electron, and SDKs |
+| External broker | Message source and target | Accessed only through its adapter |
 
-La ventana usa `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true` y `webSecurity: true`. La sesión bloquea solicitudes de permisos, ventanas nuevas y navegación no controlada. El renderer no puede usar `require`, `process` ni acceder directamente al sistema de archivos.
+The window uses `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, and `webSecurity: true`. The session blocks permission requests, new windows, and uncontrolled navigation. The renderer cannot use `require`, access `process`, or read the file system directly.
 
-## Contrato IPC
+## IPC contract
 
-`src/shared/ipc-contract.ts` enumera cada método, canal, entrada y salida. Preload valida antes de enviar; main vuelve a validar antes de ejecutar y valida la respuesta. Los handlers convierten fallos conocidos en errores con código, mensaje sanitizado y señal de recuperación.
+`src/shared/ipc-contract.ts` enumerates every method, channel, input, and output. Preload validates before sending; main validates again before execution and validates the result. Handlers convert known failures into errors with a code, sanitized message, and recoverability flag.
 
-No existe un canal IPC genérico expuesto a la UI. Agregar una capacidad privilegiada requiere incorporarla al contrato y a sus schemas Zod.
+The UI receives no generic IPC channel. Adding a privileged capability requires adding it to the contract and its Zod schemas.
 
-## Credenciales
+## Credentials
 
-Las credenciales entran por el formulario y cruzan IPC durante discovery o guardado. Discovery las mantiene en memoria y no crea un perfil. Al guardar, `SecretVault` cifra el JSON mediante `safeStorage.encryptString` antes de escribir SQLite.
+Credentials enter through the form and cross IPC during discovery or persistence. Discovery keeps them in memory and creates no profile. When a profile is saved, `SecretVault` encrypts its JSON with `safeStorage.encryptString` before writing to SQLite.
 
-Los perfiles que vuelven al renderer contienen configuración no secreta, pero nunca `encrypted_secret` ni el secreto descifrado. Si el sistema operativo informa que el cifrado no está disponible, guardar credenciales o archivar snapshots falla cerrado.
+Profiles returned to the renderer include non-secret configuration but never `encrypted_secret` or a decrypted secret. If the operating system reports that encryption is unavailable, saving credentials or archiving snapshots fails closed.
 
-La aplicación no escribe connection strings, contraseñas, Basic Auth ni URLs autenticadas en auditoría. Los scripts de documentación usan únicamente credenciales del Compose local.
+The application does not write connection strings, passwords, Basic Auth values, or authenticated URLs to audit history. Documentation scripts use only the local Compose credentials.
 
-## Datos locales
+## Local data
 
-La base se ubica en `app.getPath('userData')/dlq-commander.db`. SQLite usa WAL, por lo que durante la ejecución pueden existir archivos `-wal` y `-shm` junto a la base.
+The database is stored at `app.getPath('userData')/dlq-commander.db`. SQLite uses WAL, so `-wal` and `-shm` files can exist next to the database while the application is running.
 
-| Dato | Protección | Exposición en UI |
+| Data | Protection | Visible in UI |
 | --- | --- | --- |
-| Configuración no secreta del perfil | SQLite local | Sí |
-| Credenciales | Campo cifrado con `safeStorage` | No |
-| Auditoría | SQLite local, sin payload | Sí |
-| Snapshot previo al requeue | Campo cifrado con `safeStorage` | No |
-| Hash SHA-256 del body | SQLite local | Metadata del mensaje |
-| Preferencia de tema | `localStorage` del renderer | Sí, en Ajustes |
+| Non-secret profile configuration | Local SQLite | Yes |
+| Credentials | Field encrypted with `safeStorage` | No |
+| Audit history | Local SQLite without payloads | Yes |
+| Pre-requeue snapshot | Field encrypted with `safeStorage` | No |
+| Body SHA-256 hash | Local SQLite | Yes, in message metadata |
+| Theme preference | Renderer `localStorage` | Yes, in Settings |
 
-Los snapshots son evidencia forense local, no un backup transaccional del broker. Copiar la base a otro equipo no garantiza poder descifrarla porque `safeStorage` depende de la cuenta y del mecanismo del sistema operativo.
+Snapshots are local forensic evidence, not transactional broker backups. Copying the database to another machine does not guarantee decryption because `safeStorage` depends on the operating-system account and protection mechanism.
 
-## Controles operativos
+## Operational controls
 
-- Los perfiles nuevos empiezan en **Solo lectura**.
-- Requeue exige selección, destino y confirmación explícita.
-- El operador define un throttle entre `0.2` y `100` mensajes por segundo.
-- Solo se permite un job activo por perfil y fuente.
-- El JobRunner intenta cifrar un snapshot antes de modificar cada mensaje.
-- Cada inicio y estado terminal se registra en auditoría.
-- Los errores parciales conservan contadores de éxito y fallo.
+- New profiles start in **Solo lectura** (Read only) mode.
+- Requeue requires a selection, target, and explicit confirmation.
+- The operator chooses a throttle from `0.2` to `100` messages per second.
+- Only one active job is allowed for a given profile and source.
+- JobRunner attempts to encrypt a snapshot before modifying each message.
+- Every start and terminal state is written to audit history.
+- Partial failures retain separate success and failure counts.
 
-## Garantía de requeue por broker
+## Requeue guarantees by broker
 
-- RabbitMQ espera publisher confirms antes de hacer `ack` del original.
-- Kafka espera la publicación en el topic destino; el registro original permanece en la DLT.
-- Azure envía al destino antes de `completeMessage`.
-- Demo elimina el mensaje del conjunto en memoria después de una operación exitosa.
+- RabbitMQ waits for publisher confirms before acknowledging the original.
+- Kafka waits for target-topic publication; the original remains in the DLT.
+- Azure sends to the target before calling `completeMessage`.
+- Demo removes the message from its in-memory data after a successful operation.
 
-Estas secuencias reducen la posibilidad de pérdida por fallo del envío, pero no proporcionan una transacción distribuida entre origen y destino.
+These sequences reduce the possibility of loss after a send failure, but they do not provide a distributed transaction between source and target.
 
-## Riesgos residuales
+## Residual risks
 
-- RabbitMQ no tiene peek nativo para esta implementación; `basic.get` y `nack(requeue=true)` pueden alterar orden y estado de redelivery.
-- Kafka relee con consumers efímeros sin commits y puede recorrer el topic hasta el límite solicitado.
-- Sin `Manage`, Azure no puede consultar el contador exacto y usa el tamaño de la muestra observada.
-- Un host o una sesión de usuario comprometidos pueden acceder a datos mientras la aplicación los descifra para operar.
-- `safeStorage` protege datos en reposo, no reemplaza permisos del sistema operativo, cifrado de disco ni políticas de sesión.
-- No hay RBAC interno: toda persona con acceso a la sesión puede usar los perfiles allí guardados.
-- La distribución actual no está firmada digitalmente ni tiene actualización automática.
-- Los jobs viven en memoria; cerrar la aplicación interrumpe el procesamiento pendiente sin revertir mensajes ya confirmados.
+- RabbitMQ has no native peek in this implementation; `basic.get` plus `nack(requeue=true)` can affect ordering and redelivery state.
+- Kafka rereads with ephemeral consumers and no commits, potentially scanning the topic up to the requested limit.
+- Without `Manage`, Azure cannot query the exact count and falls back to the observed sample size.
+- A compromised host or user session can access data while the application decrypts it for an operation.
+- `safeStorage` protects data at rest; it does not replace operating-system permissions, full-disk encryption, or session policy.
+- There is no internal RBAC. Anyone with access to the user session can use its saved profiles.
+- The current distribution has no digital signature or automatic update mechanism.
+- Jobs live in memory. Closing the application interrupts pending processing without reverting confirmed messages.
 
-## Recomendaciones de operación
+## Operational recommendations
 
-1. Use identidades separadas por ambiente y privilegio mínimo.
-2. Mantenga perfiles en solo lectura salvo durante una ventana autorizada.
-3. No reutilice connection strings de administración para operación cotidiana si una policy más limitada cubre el caso.
-4. Proteja el perfil de Windows y habilite cifrado de disco según la política de la organización.
-5. Revise auditoría y destino después de cada lote.
-6. Rote de inmediato cualquier credencial compartida por chat, ticket, captura o log.
+1. Use separate identities for each environment and apply least privilege.
+2. Keep profiles read-only outside authorized operation windows.
+3. Do not use administration connection strings for routine operation when a narrower policy is sufficient.
+4. Protect the Windows account and enable disk encryption according to organizational policy.
+5. Review audit history and the target after every batch.
+6. Immediately rotate any credential shared through chat, tickets, screenshots, or logs.
 
-Consulte [Runbook operativo](operations-runbook.md) para preparación y recuperación, y [Arquitectura](architecture.md) para el flujo de cifrado e IPC.
+See the [Operations runbook](operations-runbook.md) for preparation and recovery, and [Architecture](architecture.md) for encryption and IPC data flows.

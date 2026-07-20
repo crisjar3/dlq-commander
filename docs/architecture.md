@@ -1,118 +1,118 @@
-# Arquitectura
+# Architecture
 
-DLQCommander separa la interfaz no privilegiada de las capacidades de sistema y broker. Esta división permite usar SDKs de Node en una aplicación de escritorio sin entregar acceso directo a Electron, archivos o credenciales al renderer.
+DLQCommander separates its unprivileged interface from system and broker capabilities. This boundary allows a desktop application to use Node.js SDKs without giving the renderer direct access to Electron, files, or credentials.
 
-## Vista general
+## System overview
 
 ```mermaid
 flowchart LR
-    O["Operador"] --> R["Renderer<br/>React"]
-    R -->|"API tipada"| P["Preload<br/>contextBridge"]
-    P -->|"IPC validado con Zod"| M["Main process"]
+    O["Operator"] --> R["Renderer<br/>React"]
+    R -->|"Typed API"| P["Preload<br/>contextBridge"]
+    P -->|"Zod-validated IPC"| M["Main process"]
     M --> D["BrokerDiscoveryService"]
     M --> J["JobRunner"]
-    M --> B["BrokerRegistry y adapters"]
-    M --> Q["Repositorios SQLite"]
+    M --> B["BrokerRegistry and adapters"]
+    M --> Q["SQLite repositories"]
     Q --> V["SecretVault / safeStorage"]
-    D --> X["RabbitMQ, Kafka o Azure"]
+    D --> X["RabbitMQ, Kafka, or Azure"]
     B --> X
     J --> B
     J --> Q
 ```
 
-## Responsabilidades
+## Responsibilities
 
-| Límite | Responsabilidad | No debe hacer |
+| Boundary | Responsibility | Must not |
 | --- | --- | --- |
-| Renderer | Presentar vistas, gestionar formularios, filtrar y capturar intención | Importar Node/Electron, leer SQLite o conectar a brokers |
-| Preload | Exponer `window.dlqCommander`, validar entrada y salida, transportar eventos de progreso | Exponer `ipcRenderer` genérico o secretos |
-| Shared | Definir dominio, schemas Zod, capacidades y contrato IPC | Depender de APIs privilegiadas |
-| Main | Crear la ventana, aplicar seguridad, coordinar servicios y registrar handlers IPC | Entregar errores sin sanitizar |
-| Adapters | Traducir operaciones del dominio a semántica nativa del broker | Ocultar diferencias destructivas o append-only |
-| Persistencia | Guardar perfiles, auditoría y snapshots en SQLite | Devolver secretos a la UI |
+| Renderer | Render views, manage forms, filter data, and capture user intent | Import Node/Electron, read SQLite, or connect to brokers |
+| Preload | Expose `window.dlqCommander`, validate input and output, transport progress events | Expose a generic `ipcRenderer` or credentials |
+| Shared | Define domain types, Zod schemas, capabilities, and the IPC contract | Depend on privileged APIs |
+| Main | Create the window, apply security controls, coordinate services, and register IPC handlers | Return unsanitized errors |
+| Adapters | Translate domain operations into native broker semantics | Hide destructive or append-only differences |
+| Persistence | Store profiles, audit entries, and snapshots in SQLite | Return secrets to the UI |
 
-## Procesos Electron
+## Electron processes
 
 ### Renderer
 
-React y TanStack Query componen Dashboard, Conexiones, Inspector, Auditoría y Ajustes. El renderer se ejecuta con `sandbox: true`, `contextIsolation: true` y `nodeIntegration: false`. Solo conoce perfiles sanitizados y mensajes normalizados.
+React and TanStack Query implement the Dashboard, Connections, Inspector, Audit, and Settings views. The renderer runs with `sandbox: true`, `contextIsolation: true`, and `nodeIntegration: false`. It sees only sanitized profiles and normalized messages.
 
 ### Preload
 
-`src/preload/index.ts` publica dos capacidades:
+`src/preload/index.ts` exposes two capabilities:
 
-- `invoke(method, payload)` para los métodos enumerados en `src/shared/ipc-contract.ts`;
-- `onJobProgress(callback)` para recibir el estado de jobs.
+- `invoke(method, payload)` for methods enumerated in `src/shared/ipc-contract.ts`;
+- `onJobProgress(callback)` for job status events.
 
-Preload valida el payload antes de enviarlo y vuelve a validar la respuesta. Una respuesta que no cumple el schema se rechaza en la frontera.
+Preload validates a payload before sending it and validates the response again. A response that does not satisfy its schema is rejected at the boundary.
 
 ### Main
 
-El proceso principal posee los SDKs de brokers, `node:sqlite`, `safeStorage` y el ciclo de vida de jobs. Cada handler IPC vuelve a validar la entrada, ejecuta una responsabilidad concreta y normaliza errores antes de responder.
+The main process owns broker SDKs, `node:sqlite`, `safeStorage`, and the job lifecycle. Every IPC handler validates input again, invokes one focused responsibility, and normalizes errors before returning.
 
-## Contrato IPC
+## IPC contract
 
-Los métodos públicos incluyen salud local, perfiles, discovery, fuentes, mensajes, jobs y auditoría. `src/shared/ipc-contract.ts` es la fuente única de canales y schemas.
+Public methods cover local health, profiles, discovery, sources, messages, jobs, and audit history. `src/shared/ipc-contract.ts` is the single source of channel names and schemas.
 
 ```mermaid
 sequenceDiagram
-    actor Operador
+    actor Operator
     participant UI as Renderer
     participant Preload
     participant Main
-    participant Servicio as Servicio de dominio
+    participant Service as Domain service
 
-    Operador->>UI: Inicia una acción
-    UI->>Preload: invoke(método, payload)
-    Preload->>Preload: Valida entrada
-    Preload->>Main: Canal IPC específico
-    Main->>Main: Valida entrada
-    Main->>Servicio: Ejecuta operación
-    Servicio-->>Main: Resultado o error
-    Main->>Main: Valida salida / sanitiza error
-    Main-->>Preload: Respuesta
-    Preload->>Preload: Valida salida
-    Preload-->>UI: Datos tipados
+    Operator->>UI: Initiates an action
+    UI->>Preload: invoke(method, payload)
+    Preload->>Preload: Validates input
+    Preload->>Main: Sends through a specific IPC channel
+    Main->>Main: Validates input
+    Main->>Service: Executes the operation
+    Service-->>Main: Returns a result or error
+    Main->>Main: Validates output or sanitizes error
+    Main-->>Preload: Returns response
+    Preload->>Preload: Validates output
+    Preload-->>UI: Returns typed data
 ```
 
-## Discovery antes de guardar
+## Discovery before persistence
 
-`BrokerDiscoveryService` opera sin un perfil persistido. Recibe endpoint y credenciales en memoria, aplica un timeout uniforme de 15 segundos y devuelve entidades normalizadas con nombre, tipo, contador opcional y señal de fuente sugerida.
+`BrokerDiscoveryService` operates without a saved profile. It receives an endpoint and credentials in memory, applies a uniform 15-second timeout, and returns normalized entities containing a name, type, optional count, and suggested-source flag.
 
 ```mermaid
 flowchart TD
-    A["Formulario completo"] --> B["Conectar y buscar"]
+    A["Complete connection form"] --> B["Connect and discover"]
     B --> C{"Broker"}
     C -->|"RabbitMQ"| D["GET Management API /api/queues/{vhost}"]
     C -->|"Kafka"| E["Admin listTopics"]
     C -->|"Azure"| F["listQueuesRuntimeProperties"]
-    D --> G["Normalizar colas y contadores"]
-    E --> H["Excluir topics internos"]
+    D --> G["Normalize queues and counts"]
+    E --> H["Exclude internal topics"]
     F --> G
-    G --> I["Priorizar candidatos DLQ/DLT"]
+    G --> I["Prioritize DLQ/DLT candidates"]
     H --> I
-    I --> J["Seleccionar origen y destino"]
-    J --> K["Guardar perfil y secreto cifrado"]
+    I --> J["Select source and target"]
+    J --> K["Save profile and encrypted secret"]
 ```
 
-RabbitMQ envía Basic Auth en headers y codifica el virtual host. Kafka siempre desconecta el cliente Admin. Azure usa el cliente administrativo únicamente durante discovery. Ninguna credencial aparece en la respuesta.
+RabbitMQ sends Basic Auth in headers and encodes the virtual host. Kafka always disconnects the Admin client. Azure uses its administration client only during discovery. Credentials never appear in the response.
 
-## Inspección
+## Inspection
 
-`BrokerRegistry` crea y conserva un adapter por perfil. Cada adapter produce `SourceSummary` y `NormalizedMessage`, de modo que la UI comparte tabla y panel de detalle aunque la lectura nativa sea diferente.
+`BrokerRegistry` creates and retains one adapter per profile. Every adapter produces `SourceSummary` and `NormalizedMessage` values, allowing the UI to reuse one table and details panel even though native read semantics differ.
 
-- RabbitMQ recibe un mensaje y lo devuelve a la cola con `nack(requeue=true)`.
-- Kafka lee desde el inicio con un consumer group efímero sin commits.
-- Azure usa peek nativo sobre la subcola dead-letter.
-- Demo lee estructuras en memoria.
+- RabbitMQ receives a message and returns it with `nack(requeue=true)`.
+- Kafka reads from the beginning with an ephemeral consumer group and no commits.
+- Azure performs a native peek on the dead-letter subqueue.
+- Demo reads in-memory structures.
 
-Estas operaciones no tienen garantías equivalentes. [Semántica por broker](broker-semantics.md) documenta sus efectos observables.
+These operations do not provide equivalent guarantees. [Broker semantics](broker-semantics.md) documents their observable effects.
 
-## Requeue y auditoría
+## Requeue and audit
 
 ```mermaid
 sequenceDiagram
-    actor Operador
+    actor Operator
     participant UI as Inspector
     participant Job as JobRunner
     participant Archive as ArchiveRepository
@@ -120,63 +120,63 @@ sequenceDiagram
     participant Broker
     participant Audit as AuditRepository
 
-    Operador->>UI: Confirma selección y throttle
+    Operator->>UI: Confirms selection and throttle
     UI->>Job: startRequeue
-    Job->>Audit: Registra started
-    loop Cada mensaje seleccionado
-        Job->>Adapter: Obtiene snapshot normalizado
-        Job->>Archive: Cifra y archiva snapshot
+    Job->>Audit: Records started
+    loop Each selected message
+        Job->>Adapter: Obtains normalized snapshot
+        Job->>Archive: Encrypts and archives snapshot
         Job->>Adapter: requeueMessage
-        Adapter->>Broker: Publica o envía
-        Broker-->>Adapter: Confirma resultado
-        Job-->>UI: Publica progreso
+        Adapter->>Broker: Publishes or sends
+        Broker-->>Adapter: Confirms result
+        Job-->>UI: Emits progress
     end
-    Job->>Audit: Registra estado terminal
-    Job-->>UI: Publica estado terminal
+    Job->>Audit: Records terminal state
+    Job-->>UI: Emits terminal state
 ```
 
-El JobRunner aplica el límite de velocidad de forma secuencial y mantiene los jobs en memoria. La cancelación es cooperativa. Antes de cada requeue intenta archivar el mensaje normalizado; si el cifrado no está disponible, la operación falla cerrada.
+JobRunner applies the rate limit sequentially and keeps jobs in memory. Cancellation is cooperative. Before every requeue, it attempts to archive the normalized message; if encryption is unavailable, the operation fails closed.
 
-## Persistencia local
+## Local persistence
 
-La base se crea en:
+The database is created at:
 
 ```text
 app.getPath('userData')/dlq-commander.db
 ```
 
-En Windows instalado, `app.getPath('userData')` normalmente corresponde al directorio de datos de la aplicación dentro del perfil del usuario. El valor exacto depende de Electron y del entorno; no se codifica una ruta absoluta.
+In an installed Windows application, `app.getPath('userData')` normally resolves to the application's data directory in the current user profile. The exact location depends on Electron and the environment; no absolute path is hard-coded.
 
-SQLite usa WAL y foreign keys. Las tablas actuales almacenan:
+SQLite uses WAL and foreign keys. Current tables store:
 
-| Tabla | Contenido |
+| Table | Content |
 | --- | --- |
-| `connection_profiles` | Nombre, broker, configuración no secreta y secreto cifrado |
-| `audit_entries` | Inicio y resultado de operaciones |
-| `archived_messages` | Hash y snapshot cifrado previo al requeue |
-| `schema_migrations` | Versión aplicada del esquema |
-| `saved_filters` | Estructura reservada; la UI no expone filtros guardados |
-| `settings` | Estructura reservada; el tema se guarda actualmente en `localStorage` |
+| `connection_profiles` | Name, broker, non-secret configuration, and encrypted secret |
+| `audit_entries` | Operation start and result records |
+| `archived_messages` | Hash and encrypted pre-requeue snapshot |
+| `schema_migrations` | Applied schema version |
+| `saved_filters` | Reserved structure; the UI does not expose saved filters |
+| `settings` | Reserved structure; the theme currently uses `localStorage` |
 
-`SecretVault` serializa secretos a JSON y usa `safeStorage.encryptString`. El renderer recibe el perfil sin `encrypted_secret`. Los snapshots guardan el mensaje normalizado cifrado y un hash SHA-256 en claro para correlación.
+`SecretVault` serializes secrets as JSON and calls `safeStorage.encryptString`. The renderer receives profiles without `encrypted_secret`. Snapshots store the encrypted normalized message and a plaintext SHA-256 hash for correlation.
 
-## Seguridad de la ventana
+## Window security
 
-Main bloquea navegación no controlada, creación de ventanas y solicitudes de permisos. La sesión aplica Content Security Policy para recursos locales. El modelo completo, riesgos residuales y manejo de secretos se documentan en [Modelo de seguridad](security-model.md).
+Main blocks uncontrolled navigation, new-window creation, and permission requests. The session applies a Content Security Policy for local resources. [Security model](security-model.md) documents the complete model, residual risks, and secret handling.
 
-## Estructura del código
+## Code structure
 
 ```text
 src/
-  main/       brokers, jobs, seguridad, IPC y persistencia
-  preload/    API limitada expuesta al renderer
-  renderer/   React, vistas, componentes y estilos
-  shared/     dominio, schemas y contrato IPC
+  main/       brokers, jobs, security, IPC, and persistence
+  preload/    limited API exposed to the renderer
+  renderer/   React application, components, views, and styles
+  shared/     domain, schemas, capabilities, and IPC contract
 tests/
-  unit/       reglas aisladas y repositorios
-  integration/adapters contra brokers reales
-  e2e/        aplicación Electron con Demo
-  e2e-brokers/aplicación Electron con Docker
+  unit/       isolated rules and repositories
+  integration/ adapters against real brokers
+  e2e/        Electron application with Demo
+  e2e-brokers/ Electron application with Docker
 ```
 
-Las decisiones que justifican los límites principales se conservan como [ADRs](adr/001-electron-typescript.md).
+The decisions behind the primary boundaries are preserved as [ADRs](adr/001-electron-typescript.md).

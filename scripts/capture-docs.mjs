@@ -15,7 +15,7 @@ async function addMarkers(page, locators) {
   for (const locator of locators) {
     await locator.waitFor({ state: 'visible' })
     const box = await locator.boundingBox()
-    if (!box) throw new Error('No se pudo ubicar un control para la captura documental')
+    if (!box) throw new Error('Could not locate a control for the documentation screenshot')
     positions.push({
       x: Math.max(4, Math.min(box.x - 30, 1404)),
       y: Math.max(4, Math.min(box.y + (box.height - 26) / 2, 864))
@@ -68,7 +68,7 @@ async function capture(page, name, locators, region) {
   const options = { path: join(outputDirectory, name), animations: 'disabled' }
   if (region) {
     const box = await region.boundingBox()
-    if (!box) throw new Error('No se pudo recortar la región documental')
+    if (!box) throw new Error('Could not crop the documentation screenshot region')
     const margin = 32
     const x = Math.max(0, box.x - margin)
     const y = Math.max(0, box.y - margin)
@@ -136,7 +136,7 @@ try {
   ])
 
   await page.getByRole('button', { name: 'Nueva conexión' }).click()
-  await page.getByLabel('Nombre del perfil').fill('RabbitMQ laboratorio')
+  await page.getByLabel('Nombre del perfil').fill('RabbitMQ lab')
   await page.getByLabel('Contraseña').fill('dlqcommander')
   await page.getByRole('button', { name: 'Conectar y buscar' }).click()
   await page.getByText(/colas encontradas/).waitFor({ timeout: 15_000 })
@@ -151,7 +151,7 @@ try {
   await page.getByRole('button', { name: 'Cancelar' }).click()
 
   await page.getByRole('button', { name: 'Nueva conexión' }).click()
-  await page.getByLabel('Nombre del perfil').fill('Entrada manual laboratorio')
+  await page.getByLabel('Nombre del perfil').fill('Manual entry lab')
   await page.getByLabel('Contraseña').fill('credencial-invalida')
   await page.getByRole('button', { name: 'Conectar y buscar' }).click()
   await page.getByText('Permisos insuficientes').waitFor({ timeout: 15_000 })

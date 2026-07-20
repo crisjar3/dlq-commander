@@ -1,37 +1,37 @@
-# Documentación de DLQCommander
+# DLQCommander documentation
 
-Este directorio contiene la documentación pública del comportamiento actual de DLQCommander. Elija la ruta según su objetivo.
+This directory contains the public documentation for DLQCommander's current behavior. Choose a path based on your role and objective.
 
-## Usuarios y operadores
+## Users and operators
 
-| Necesidad | Documento |
+| Need | Document |
 | --- | --- |
-| Conocer la interfaz y completar un primer recorrido | [Guía de usuario](user-guide.md) |
-| Crear conexiones y asignar permisos mínimos | [Configuración de brokers](broker-configuration.md) |
-| Ejecutar requeue y responder a incidentes | [Runbook operativo](operations-runbook.md) |
-| Entender qué cambia en cada broker | [Semántica por broker](broker-semantics.md) |
-| Conocer protección de credenciales y datos locales | [Modelo de seguridad](security-model.md) |
+| Learn the interface and complete a first walkthrough | [User guide](user-guide.md) |
+| Create connections and assign minimum permissions | [Broker configuration](broker-configuration.md) |
+| Perform requeue operations and respond to incidents | [Operations runbook](operations-runbook.md) |
+| Understand how behavior differs by broker | [Broker semantics](broker-semantics.md) |
+| Understand credential protection and local data | [Security model](security-model.md) |
 
-## Desarrollo y mantenimiento
+## Development and maintenance
 
-| Necesidad | Documento |
+| Need | Document |
 | --- | --- |
-| Instalar, ejecutar, probar y empaquetar | [Desarrollo, pruebas y distribución](development.md) |
-| Comprender procesos, IPC, persistencia y flujos | [Arquitectura](architecture.md) |
-| Consultar cobertura y criterios de aprobación | [Matriz de pruebas](testing-matrix.md) |
-| Revisar decisiones técnicas aceptadas | [Decisiones de arquitectura](adr/001-electron-typescript.md) |
+| Install, run, test, and package the application | [Development, testing, and distribution](development.md) |
+| Understand processes, IPC, persistence, and workflows | [Architecture](architecture.md) |
+| Review coverage and acceptance criteria | [Testing matrix](testing-matrix.md) |
+| Review accepted technical decisions | [Architecture decisions](adr/001-electron-typescript.md) |
 
-## Recorridos recomendados
+## Recommended reading paths
 
-**Primera evaluación:** [Guía de usuario](user-guide.md#primer-recorrido) → [Configuración de brokers](broker-configuration.md) → [Semántica por broker](broker-semantics.md).
+**First evaluation:** [User guide](user-guide.md#first-walkthrough) → [Broker configuration](broker-configuration.md) → [Broker semantics](broker-semantics.md).
 
-**Preparación operativa:** [Modelo de seguridad](security-model.md) → [Runbook operativo](operations-runbook.md) → [Matriz de pruebas](testing-matrix.md).
+**Operational readiness:** [Security model](security-model.md) → [Operations runbook](operations-runbook.md) → [Testing matrix](testing-matrix.md).
 
-**Contribución técnica:** [Arquitectura](architecture.md) → [Desarrollo](development.md) → [ADRs](adr/001-electron-typescript.md).
+**Technical contribution:** [Architecture](architecture.md) → [Development](development.md) → [ADRs](adr/001-electron-typescript.md).
 
-## Convenciones
+## Conventions
 
-- Los nombres de botones y pantallas se muestran en **negrita** y coinciden con la interfaz en español.
-- Los comandos se ejecutan desde la raíz del repositorio con PowerShell, salvo que se indique lo contrario.
-- DLQ identifica una dead-letter queue; DLT identifica un dead-letter topic.
-- Una fuente es la cola o topic que DLQCommander inspecciona. El destino recibe los mensajes reenviados.
+- Button and screen names shown in **bold** match the current Spanish-language UI.
+- Commands are run from the repository root in PowerShell unless stated otherwise.
+- DLQ means dead-letter queue; DLT means dead-letter topic.
+- A source is the queue or topic inspected by DLQCommander. The target receives requeued messages.

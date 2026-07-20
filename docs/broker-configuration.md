@@ -1,151 +1,153 @@
-# Configuración de brokers
+# Broker configuration
 
-Este documento describe los campos, permisos y comprobaciones necesarias para crear perfiles. DLQCommander usa las credenciales configuradas; no eleva permisos ni crea colas o topics.
+This document describes the fields, permissions, and checks required to create profiles. DLQCommander uses the configured credentials; it does not elevate permissions or create queues or topics.
 
-## Flujo común
+The application UI is currently in Spanish. Literal field and action names are preserved in **bold**.
 
-1. Abra **Conexiones** y seleccione **Nueva conexión**.
-2. Asigne un nombre que identifique ambiente y dominio.
-3. Seleccione el broker y complete endpoint y credenciales.
-4. Pulse **Conectar y buscar**.
-5. Seleccione fuente y destino entre los recursos descubiertos.
-6. Mantenga **Solo lectura** durante la validación inicial.
-7. Guarde el perfil y pulse **Probar**.
+## Common workflow
 
-El discovery ocurre antes de guardar. Las credenciales permanecen en memoria durante esa llamada y solo se persisten, cifradas, después de pulsar **Guardar perfil**.
+1. Open **Conexiones** and select **Nueva conexión**.
+2. Choose a name that identifies the environment and domain.
+3. Select the broker and complete its endpoint and credentials.
+4. Select **Conectar y buscar**.
+5. Choose the source and target from the discovered resources.
+6. Keep **Solo lectura** enabled during initial validation.
+7. Save the profile and select **Probar**.
+
+Discovery occurs before the profile is saved. Credentials remain in memory during that call and are persisted, encrypted, only after **Guardar perfil** is selected.
 
 ## RabbitMQ
 
-### Campos
+### Fields
 
-| Campo | Descripción | Ejemplo local |
+| Field | Description | Local example |
 | --- | --- | --- |
-| Host | Nombre DNS o IP del broker, sin protocolo | `localhost` |
-| Puerto AMQP | Puerto para inspección y requeue | `5672` |
-| Virtual host | Ámbito que contiene origen y destino | `/` |
-| Usuario | Identidad RabbitMQ | `dlqcommander` |
-| Contraseña | Secreto de la identidad | Valor del entorno |
-| TLS | Cambia AMQP a AMQPS y la URL de Management derivada | Desactivado en el laboratorio |
-| Management URL | Base HTTP opcional para discovery | `http://localhost:15672` |
+| Host | Broker DNS name or IP address, without a protocol | `localhost` |
+| AMQP port | Port used for inspection and requeue | `5672` |
+| Virtual host | Scope containing the source and target | `/` |
+| Username | RabbitMQ identity | `dlqcommander` |
+| Password | Identity secret | Environment-specific value |
+| TLS | Changes AMQP to AMQPS and updates the derived Management URL | Disabled in the lab |
+| Management URL | Optional HTTP base URL used for discovery | `http://localhost:15672` |
 
-DLQCommander deriva `http://{host}:15672` sin TLS y `https://{host}:15671` con TLS. Use **Opciones avanzadas** cuando la API esté detrás de un proxy, use otro puerto o tenga una base URL distinta. La URL no puede contener credenciales.
+DLQCommander derives `http://{host}:15672` without TLS and `https://{host}:15671` with TLS. Use **Opciones avanzadas** when the API is behind a proxy, uses another port, or has a different base URL. The URL must not contain credentials.
 
-### Requisitos del servidor
+### Server requirements
 
-- RabbitMQ Management Plugin habilitado.
-- Acceso de red al puerto AMQP y al puerto HTTP de Management API.
-- Permiso de lectura sobre la DLQ para inspección.
-- Permiso de escritura sobre el destino para requeue.
-- Acceso a `GET /api/queues/{vhost}` para discovery.
+- RabbitMQ Management Plugin enabled.
+- Network access to both the AMQP and Management HTTP ports.
+- Read permission on the DLQ for inspection.
+- Write permission on the target for requeue.
+- Access to `GET /api/queues/{vhost}` for discovery.
 
-El discovery usa Basic Auth en el header `Authorization`. Un usuario puede operar AMQP y aun no tener acceso a la Management API; en ese caso use **Ingresar manualmente** y valide el perfil con **Probar**.
+Discovery sends Basic Auth through the `Authorization` header. A user can have AMQP permissions without access to the Management API. In that case, use **Ingresar manualmente** and validate the profile with **Probar**.
 
-### Comportamiento esperado
+### Expected behavior
 
-La lista incluye todas las colas visibles en el virtual host. DLQCommander muestra el contador `messages`, prioriza colas con mensajes o nombres DLQ/DLT y conserva orden alfabético para el resto.
+The result includes every queue visible in the virtual host. DLQCommander displays the `messages` count, lists non-empty or DLQ/DLT-like queues first, and uses alphabetical order for the rest.
 
-**Probar** abre AMQP, verifica que fuente y destino existan y devuelve la latencia. Durante requeue, la aplicación publica con publisher confirms y solo confirma el mensaje original después del publish exitoso.
+**Probar** opens AMQP, verifies that both source and target exist, and returns latency. During requeue, the application uses publisher confirms and acknowledges the original message only after a successful publish.
 
-### Laboratorio local
+### Local lab
 
-| Campo | Valor |
+| Field | Value |
 | --- | --- |
 | Host | `localhost` |
-| Puerto AMQP | `5672` |
+| AMQP port | `5672` |
 | Virtual host | `/` |
-| Usuario | `dlqcommander` |
-| Contraseña | `dlqcommander` |
+| Username | `dlqcommander` |
+| Password | `dlqcommander` |
 | Management URL | `http://localhost:15672` |
-| Fuente | `orders.dlq` |
-| Destino | `orders` |
+| Source | `orders.dlq` |
+| Target | `orders` |
 
-La cadena equivalente es `amqp://dlqcommander:dlqcommander@localhost:5672/%2F`. Estas credenciales pertenecen exclusivamente al laboratorio definido en `docker-compose.yml`.
+The equivalent connection URI is `amqp://dlqcommander:dlqcommander@localhost:5672/%2F`. These credentials belong exclusively to the lab defined in `docker-compose.yml`.
 
 ## Apache Kafka
 
-### Campos
+### Fields
 
-| Campo | Descripción | Ejemplo local |
+| Field | Description | Local example |
 | --- | --- | --- |
-| Bootstrap servers | Brokers separados por coma | `localhost:9092` |
-| Client ID | Identificador del cliente en logs del broker | `dlq-commander` |
-| Topic DLT | Fuente que se inspeccionará | `orders.events.dlt` |
-| Topic destino | Topic que recibirá la copia | `orders.events` |
+| Bootstrap servers | Comma-separated brokers | `localhost:9092` |
+| Client ID | Client identifier shown in broker logs | `dlq-commander` |
+| DLT topic | Source to inspect | `orders.events.dlt` |
+| Target topic | Topic that receives the copy | `orders.events` |
 
-La interfaz actual configura conexiones PLAINTEXT. No expone TLS, SASL, Schema Registry ni autenticación específica de proveedores administrados.
+The current UI configures PLAINTEXT connections. It does not expose TLS, SASL, Schema Registry, or provider-specific authentication.
 
-### Permisos
+### Permissions
 
-La identidad o ACL del listener debe permitir:
+The identity or listener ACL must allow the client to:
 
-- listar topics para discovery;
-- describir la DLT y consultar offsets para profundidad;
-- leer la DLT mediante consumers efímeros;
-- describir el topic destino;
-- producir en el topic destino para requeue.
+- list topics for discovery;
+- describe the DLT and query offsets for depth;
+- read the DLT with ephemeral consumers;
+- describe the target topic;
+- produce to the target topic for requeue.
 
-Los nombres con prefijo `__` se consideran internos y no aparecen en discovery. Kafka no aporta un contador de mensajes durante la búsqueda; la profundidad se calcula después de guardar el perfil mediante offsets `high - low` por partición.
+Names beginning with `__` are treated as internal and excluded from discovery. Kafka does not provide a message count during topic listing; after the profile is saved, depth is calculated from `high - low` offsets for every partition.
 
-### Comportamiento esperado
+### Expected behavior
 
-**Probar** confirma que los dos topics existen. El Inspector usa un group ID efímero, comienza desde el inicio y no hace commit. Requeue publica `key`, `value` y headers al destino, añade referencias de topic, partición y offset, y conserva el registro original en la DLT.
+**Probar** confirms that both topics exist. The Inspector uses an ephemeral group ID, starts at the beginning, and does not commit offsets. Requeue publishes the key, value, and headers to the target, adds source topic, partition, and offset references, and keeps the original DLT record.
 
-### Laboratorio local
+### Local lab
 
-| Campo | Valor |
+| Field | Value |
 | --- | --- |
 | Bootstrap servers | `localhost:9092` |
 | Client ID | `dlq-commander` |
-| Fuente | `orders.events.dlt` |
-| Destino | `orders.events` |
+| Source | `orders.events.dlt` |
+| Target | `orders.events` |
 
 ## Azure Service Bus
 
-### Campo de conexión
+### Connection field
 
-El formulario recibe una connection string completa con este formato:
+The form accepts a complete connection string in this format:
 
 ```text
 Endpoint=sb://<namespace>.servicebus.windows.net/;SharedAccessKeyName=<policy>;SharedAccessKey=<secret>
 ```
 
-No escriba una connection string real en archivos del repositorio, capturas, logs o comandos compartidos. Para pruebas automatizadas opt-in, expóngala únicamente en la variable `AZURE_SERVICE_BUS_CONNECTION_STRING` de la sesión local.
+Never write a real connection string to repository files, screenshots, logs, or shared commands. For opt-in automated tests, expose it only through `AZURE_SERVICE_BUS_CONNECTION_STRING` in the local shell session.
 
-### Permisos
+### Permissions
 
-| Operación | Permiso requerido |
+| Operation | Required permission |
 | --- | --- |
-| Discovery y contador exacto | `Manage` |
-| Inspección de `$DeadLetterQueue` | `Listen` |
-| Envío al destino | `Send` |
-| Completar el mensaje original | `Listen` |
+| Discovery and exact count | `Manage` |
+| `$DeadLetterQueue` inspection | `Listen` |
+| Send to target | `Send` |
+| Complete the original message | `Listen` |
 
-Una policy `Manage` suele incluir Listen y Send. Para reducir privilegios, se pueden usar credenciales operativas más limitadas y escribir fuente/destino manualmente, pero el contador exacto no estará disponible sin acceso a runtime properties.
+A `Manage` policy usually includes Listen and Send. To reduce privileges, use narrower operational credentials and enter source and target names manually, but exact runtime-property counts are unavailable without `Manage`.
 
-### Comportamiento esperado
+### Expected behavior
 
-Discovery enumera colas con `listQueuesRuntimeProperties()` y muestra `deadLetterMessageCount`. El perfil trata la cola elegida como origen y abre su subcola `$DeadLetterQueue`.
+Discovery enumerates queues with `listQueuesRuntimeProperties()` and displays `deadLetterMessageCount`. The saved profile treats the selected queue as the source and opens its `$DeadLetterQueue` subqueue.
 
-**Probar** ejecuta un peek sobre la DLQ. La inspección no bloquea ni completa mensajes. Requeue recibe el mensaje en peek-lock, lo envía al destino y completa el original solo después del envío exitoso.
+**Probar** peeks into the DLQ. Inspection does not lock, complete, or remove messages. Requeue receives the message in peek-lock mode, sends it to the target, and completes the original only after a successful send.
 
-## Demo local
+## Local Demo
 
-El perfil **Demo local** se crea automáticamente cuando la base no contiene perfiles. Incluye:
+The **Demo local** profile is created automatically when the database has no profiles. It contains:
 
-- `Orders / DLQ`, destino `orders`, 28 mensajes iniciales;
-- `Payments / DLQ`, destino `payments`, 11 mensajes iniciales;
-- `Notifications / DLQ`, destino `notifications`, 5 mensajes iniciales.
+- `Orders / DLQ`, target `orders`, with 28 initial messages;
+- `Payments / DLQ`, target `payments`, with 11 initial messages;
+- `Notifications / DLQ`, target `notifications`, with 5 initial messages.
 
-No usa red ni credenciales. Los mensajes viven en memoria del proceso y se reconstruyen al reiniciar. El perfil no puede eliminarse.
+Demo uses no network connection or credentials. Messages live in process memory and are rebuilt after restart. The profile cannot be deleted.
 
-## Diagnóstico de discovery
+## Discovery troubleshooting
 
-| Estado visible | Significado | Recuperación |
+| Visible state | Meaning | Recovery |
 | --- | --- | --- |
-| **Permisos insuficientes** | El endpoint respondió, pero la identidad no puede enumerar recursos | Ajuste permisos o use entrada manual |
-| **No fue posible completar la búsqueda** | Timeout, red, DNS, TLS o servicio no disponible | Verifique conectividad y reintente |
-| **No se encontraron recursos** | La consulta fue válida y devolvió una lista vacía | Confirme ámbito, virtual host o namespace |
-| **La conexión cambió** | Un campo sensible cambió después del discovery | Pulse **Buscar nuevamente** |
-| Management API no encontrada | La URL RabbitMQ respondió 404 | Corrija Management URL o use entrada manual |
+| **Permisos insuficientes** | The endpoint responded, but the identity cannot enumerate resources | Adjust permissions or use manual entry |
+| **No fue posible completar la búsqueda** | Timeout, network, DNS, TLS, or service availability failure | Verify connectivity and retry |
+| **No se encontraron recursos** | The request succeeded and returned an empty list | Confirm the scope, virtual host, or namespace |
+| **La conexión cambió** | A connection-sensitive field changed after discovery | Select **Buscar nuevamente** |
+| Management API not found | The RabbitMQ URL returned 404 | Correct the Management URL or use manual entry |
 
-La aplicación sanitiza errores antes de mostrarlos. Contraseñas, connection strings y headers de autorización no forman parte de los mensajes de error.
+The application sanitizes errors before displaying them. Passwords, connection strings, and authorization headers are never included in error messages.

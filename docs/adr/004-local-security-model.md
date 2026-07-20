@@ -1,24 +1,24 @@
-# ADR 004: Seguridad local y modo conservador
+# ADR 004: Local security and conservative defaults
 
-- Estado: aceptado
-- Fecha: 2026-07-19
+- Status: accepted
+- Date: 2026-07-19
 
-## Contexto
+## Context
 
-La herramienta maneja credenciales y payloads que pueden ser sensibles, además de ejecutar operaciones irreversibles sobre brokers.
+The application handles credentials and potentially sensitive payloads while performing irreversible broker operations.
 
-## Decisión
+## Decision
 
-Usar `safeStorage`, SQLite local, sandbox, perfiles read-only por defecto, confirmación explícita y snapshots cifrados antes de requeue. Si el cifrado no está disponible, se rechaza guardar secretos o archivar operaciones.
+Use `safeStorage`, local SQLite, renderer sandboxing, read-only profiles by default, explicit confirmation, and encrypted snapshots before requeue. Reject secret persistence and message archival when encryption is unavailable.
 
-## Alternativas consideradas
+## Alternatives considered
 
-Guardar credenciales en texto plano o variables locales reduce implementación, pero no protege datos en reposo. Una bóveda remota exigiría identidad, disponibilidad de red y administración externa que no pertenecen al límite local del producto.
+Plaintext credentials or local environment variables reduce implementation effort but do not protect data at rest. A remote vault requires external identity, network availability, and administration beyond the application's local boundary.
 
-## Consecuencias
+## Consequences
 
-Los datos cifrados dependen de la cuenta y mecanismos del sistema operativo. Copiar solo la base a otro equipo no garantiza recuperación de secretos.
+Encrypted data depends on the operating-system account and protection mechanism. Copying only the database to another machine does not guarantee secret recovery.
 
-## Validación
+## Validation
 
-El E2E comprueba que `require` y `process` no existen en renderer. Unit tests comprueban que el vault falla cerrado sin cifrado.
+E2E tests verify that `require` and `process` are unavailable in the renderer. Unit tests verify that the vault fails closed when encryption is unavailable.
