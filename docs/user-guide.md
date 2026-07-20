@@ -78,11 +78,11 @@ Select **Conectar y buscar**. Discovery has a 15-second timeout and blocks dupli
 
 ![Connection form showing the searchable namespace preview](assets/tutorials/connection-02-discovered-queues.png)
 
-*Action:* review the result count (1), search by name (2), and optionally select a resource to open after saving (3). *Expected result:* queues and topics visible to the credential appear in a virtualized list.
+*Action:* review loading progress (1), search by name while more pages arrive (2), and optionally select a resource to open after saving (3). *Expected result:* queues and topics visible to the credential appear in pages of 50 without waiting for the complete namespace before the first results are usable.
 
 Saving a namespace does not require a source or destination. **Guardar y explorar** stores the endpoint and encrypted credential, then opens the resource explorer. A selected Azure topic opens its subscriptions; a selected inspectable resource opens its Inspector.
 
-Search is case-insensitive and ranks exact names, prefixes, segment prefixes, and substrings. No network request is sent for each keystroke.
+The connection cannot be saved until every page has loaded. If an intermediate page fails, the preview keeps earlier pages and offers **Reintentar desde aquí**. Changing the broker, endpoint, credentials, virtual host, or Management URL discards every page from the previous attempt.
 
 ### Use manual fallback
 
@@ -104,24 +104,57 @@ Profiles can be tested, explored, or deleted. Editing an existing profile is not
 
 ### Search large namespaces
 
-Open a connection from Dashboard or select **Explorar** under **Conexiones**. The root list is fetched once and cached for 60 seconds. Search operates on that local result.
+Open a connection from Dashboard or select **Explorar** under **Conexiones**. The first broker page appears as soon as it is available, and DLQCommander continues requesting subsequent pages sequentially in the background. Azure queues and topics load concurrently; subscriptions remain lazy until a topic is opened. Every collection is cached for 60 seconds.
+
+![Resource catalog remaining usable while later broker pages load](assets/tutorials/resource-explorer-05-loading-progress.png)
+
+*Action:* review the loaded count (1), background activity (2), and immediately available rows (3). *Expected result:* the catalog remains usable while the count increases until the final total replaces the loading state.
 
 - RabbitMQ displays queues.
 - Kafka displays non-internal topics.
 - Azure displays separate **Queues** and **Topics** tabs.
 - Demo displays its built-in queues.
 
-Resources containing messages or DLQ/DLT-like names appear first when the query is empty. The list remains virtualized, so large namespaces do not create one DOM element per resource.
+![A 184-resource namespace with the page navigator visible](assets/tutorials/resource-explorer-02-pagination.png)
+
+*Action:* use first, previous, next, or last page (1) while reviewing the loaded-resource status (2). *Expected result:* the visible result set contains at most 50 rows and only the rows in the viewport enter the DOM.
+
+With an empty query, resources use natural alphabetical order, matching the Azure Portal scanning model. The footer reports the visible range, current page, and total pages. During background loading, the toolbar reports values such as `150 cargados · cargando...`; when complete, it reports the final resource count.
+
+Search is local and never sends a broker request for each keystroke. It ignores case and accents, treats dots, slashes, underscores, spaces, and hyphens as segment boundaries, and requires every entered term. Ranking is deterministic:
+
+1. exact name or full path;
+2. name prefix;
+3. segment prefix;
+4. substring, equivalent to local `ILIKE '%text%'` behavior;
+5. typo-tolerant Fuse matching when no direct match exists;
+6. natural alphabetical order within the same rank.
+
+![Typo-tolerant local search in a large resource catalog](assets/tutorials/resource-explorer-03-typo-search.png)
+
+*Action:* enter an incomplete or slightly misspelled name (1). *Expected result:* the closest resource remains discoverable and the status states how many matches exist in the currently loaded catalog.
 
 ### Open Azure subscriptions
 
 Select the Azure **Topics** tab, search for a topic, and open it. DLQCommander lazily requests only that topic's subscriptions. The breadcrumb identifies the active topic, and the subscription search remains local after loading.
 
+![Azure-style Topics catalog with broker-specific metrics](assets/tutorials/azure-resources-01-topics.png)
+
+*Action:* switch to **Topics**, search the catalog (1), and open a topic row (2). *Expected result:* topic rows show subscription, scheduled-message, and size metrics when Azure provides them.
+
+![Subscription catalog opened from an Azure topic](assets/tutorials/azure-resources-02-subscriptions.png)
+
+*Action:* follow the topic breadcrumb (1) and search subscriptions (2). *Expected result:* subscriptions show total, active, and DLQ counts and can be opened as DLQ sources.
+
 Azure topics are navigation containers and valid requeue destinations. Their subscriptions are inspectable DLQ sources and cannot be selected as destinations.
+
+![Subscription search on a compact dark viewport](assets/tutorials/resource-explorer-04-mobile-dark.png)
+
+*Action:* repeat the search on a narrow viewport (1), open a stacked row (2), or change pages (3). *Expected result:* the resource name and primary metric remain readable without horizontal scrolling.
 
 ### Refresh
 
-Select **Actualizar** to bypass the 60-second cache. Permission, network, empty, and stale states remain inside the explorer so navigation and theme controls stay available.
+Select the refresh icon in the catalog toolbar to invalidate that collection's 60-second cache and restart from page one. A failed intermediate page leaves the already loaded rows searchable and offers **Reintentar desde aquí**. Permission, network, empty, and stale states remain inside the explorer so navigation and theme controls stay available.
 
 ## Inspect messages
 
@@ -185,7 +218,8 @@ The Inspector reports job progress. On completion, open **Auditoría**.
 ## Keyboard navigation
 
 - `Tab` and `Shift+Tab` move through navigation and commands.
-- Resource search supports `Arrow Up`, `Arrow Down`, `Home`, `End`, and `Enter`.
+- Resource search supports `Arrow Up`, `Arrow Down`, `Home`, `End`, `Page Up`, `Page Down`, and `Enter`.
+- The four paginator buttons move to the first, previous, next, and last visible page.
 - `Escape` clears a resource query before closing the surrounding dialog.
 - `Enter` or `Space` opens a focused Dashboard connection.
 - Visible focus identifies the active control, and status changes use accessible live regions.

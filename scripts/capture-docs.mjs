@@ -1,4 +1,4 @@
-/* global document, innerHeight, innerWidth, localStorage */
+/* global document, innerHeight, innerWidth, localStorage, window */
 
 import { _electron as electron } from '@playwright/test'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
@@ -91,6 +91,68 @@ async function scrollModalToBottom(page) {
   await page.waitForTimeout(100)
 }
 
+async function installAzureDocumentationFixture(app) {
+  await app.evaluate(({ ipcMain }) => {
+    const emptyMetrics = () => ({
+      totalMessages: null,
+      activeMessages: null,
+      readyMessages: null,
+      unacknowledgedMessages: null,
+      deadLetterMessages: null,
+      scheduledMessages: null,
+      sizeBytes: null,
+      subscriptionCount: null
+    })
+    const queues = Array.from({ length: 183 }, (_, index) => {
+      const name = `customer-workflow-${String(index + 1).padStart(3, '0')}`
+      const dlq = index % 19 === 0 ? index + 2 : 0
+      return {
+        key: `queue:${name}`, name, kind: 'queue', parent: null,
+        messageCount: dlq, childCount: null, canInspect: true, canTarget: true,
+        suggestedSource: dlq > 0, status: null,
+        metrics: { ...emptyMetrics(), totalMessages: dlq + index % 7, activeMessages: index % 7, deadLetterMessages: dlq, scheduledMessages: index % 3, sizeBytes: 2048 + index * 64 }
+      }
+    })
+    const topics = Array.from({ length: 68 }, (_, index) => {
+      const name = index < 8 ? `billing-events-${String(index + 1).padStart(2, '0')}` : `domain-events-${String(index + 1).padStart(3, '0')}`
+      const subscriptions = 2 + index % 9
+      return {
+        key: `topic:${name}`, name, kind: 'topic', parent: null,
+        messageCount: null, childCount: subscriptions, canInspect: false, canTarget: true,
+        suggestedSource: false, status: null,
+        metrics: { ...emptyMetrics(), subscriptionCount: subscriptions, scheduledMessages: index % 4, sizeBytes: 4096 + index * 128 }
+      }
+    })
+    const subscriptions = (topicName) => Array.from({ length: 73 }, (_, index) => {
+      const name = index < 6 ? `retry-worker-${String(index + 1).padStart(2, '0')}` : `consumer-${String(index + 1).padStart(3, '0')}`
+      const dlq = index % 11 === 0 ? index + 1 : 0
+      return {
+        key: `subscription:${encodeURIComponent(topicName)}/${encodeURIComponent(name)}`,
+        name, kind: 'subscription', parent: { kind: 'topic', name: topicName },
+        messageCount: dlq, childCount: null, canInspect: true, canTarget: false,
+        suggestedSource: dlq > 0, status: null,
+        metrics: { ...emptyMetrics(), totalMessages: dlq + index % 5, activeMessages: index % 5, deadLetterMessages: dlq }
+      }
+    })
+
+    ipcMain.removeHandler('resources:list-page')
+    ipcMain.handle('resources:list-page', async (_event, input) => {
+      const collection = input.collection
+      const all = collection.kind === 'queues' ? queues : collection.kind === 'topics' ? topics : subscriptions(collection.topicName)
+      const offset = input.cursor ? Number(input.cursor) : 0
+      if (offset > 0) await new Promise((resolve) => setTimeout(resolve, 700))
+      const page = all.slice(offset, offset + input.pageSize)
+      const nextOffset = offset + page.length
+      return {
+        entities: page,
+        nextCursor: nextOffset < all.length ? String(nextOffset) : null,
+        totalCount: all.length,
+        latencyMs: offset > 0 ? 700 : 8
+      }
+    })
+  })
+}
+
 try {
   await mkdir(outputDirectory, { recursive: true })
   electronApp = await electron.launch({
@@ -99,6 +161,7 @@ try {
     env: {
       ...process.env,
       DLQ_COMMANDER_E2E_USER_DATA: userDataPath,
+      DLQ_COMMANDER_DEMO_RESOURCE_COUNT: '184',
       ELECTRON_DISABLE_SECURITY_WARNINGS: 'true'
     }
   })
@@ -139,8 +202,8 @@ try {
   await page.getByLabel('Nombre del perfil').fill('RabbitMQ lab')
   await page.getByLabel('Contraseña').fill('dlqcommander')
   await page.getByRole('button', { name: 'Conectar y buscar' }).click()
-  await page.getByRole('option', { name: /orders\.dlq/i }).waitFor({ timeout: 15_000 })
   await page.getByPlaceholder('Buscar queue o topic').fill('orders')
+  await page.getByRole('option', { name: /orders\.dlq/i }).waitFor({ timeout: 15_000 })
   await scrollModalToBottom(page)
   await capture(page, 'connection-02-discovered-queues.png', [
     page.locator('.routing-status-line'),
@@ -167,6 +230,16 @@ try {
 
   await page.getByRole('button', { name: 'Dashboard' }).click()
   await page.getByText('Demo local').click()
+  await page.getByText('184 recursos').waitFor({ timeout: 15_000 })
+  await capture(page, 'resource-explorer-02-pagination.png', [
+    page.locator('.resource-result-count'),
+    page.locator('.resource-paginator')
+  ])
+  await page.getByPlaceholder('Buscar queue').fill('paymnts.dlq')
+  await capture(page, 'resource-explorer-03-typo-search.png', [
+    page.getByPlaceholder('Buscar queue'),
+    page.getByRole('option', { name: /payments\.dlq/i })
+  ])
   await page.getByPlaceholder('Buscar queue').fill('payments')
   await capture(page, 'resource-explorer-01-search.png', [
     page.getByPlaceholder('Buscar queue'),
@@ -211,6 +284,51 @@ try {
   await page.getByText('1 ok').first().waitFor()
   await capture(page, 'requeue-03-audit.png', [
     page.locator('.data-table tbody tr').first()
+  ])
+
+  await installAzureDocumentationFixture(electronApp)
+  await page.evaluate(async () => {
+    await window.dlqCommander.invoke('saveProfile', {
+      name: 'Azure tutorial namespace',
+      brokerType: 'azure-service-bus',
+      readOnly: true,
+      configuration: { profileMode: 'namespace' },
+      secret: { connectionString: 'documentation-fixture' }
+    })
+  })
+  await page.reload()
+  await page.waitForSelector('[data-testid="app-shell"]')
+  await page.getByText('Azure tutorial namespace').click()
+  await page.getByText(/50 cargados/).waitFor()
+  await capture(page, 'resource-explorer-05-loading-progress.png', [
+    page.locator('.resource-result-count'),
+    page.locator('.resource-loading-icon'),
+    page.locator('.resource-list-row').first()
+  ])
+  await page.getByRole('tab', { name: /Topics/ }).click()
+  await page.getByPlaceholder('Buscar topic').fill('billing')
+  await page.getByRole('option', { name: /billing-events-01/i }).waitFor()
+  await capture(page, 'azure-resources-01-topics.png', [
+    page.getByRole('tab', { name: /Topics/ }),
+    page.getByPlaceholder('Buscar topic'),
+    page.getByRole('option', { name: /billing-events-01/i })
+  ])
+  await page.getByRole('option', { name: /billing-events-01/i }).click()
+  await page.getByPlaceholder('Buscar subscription').fill('retry')
+  await page.getByRole('option', { name: /retry-worker-01/i }).waitFor()
+  await capture(page, 'azure-resources-02-subscriptions.png', [
+    page.locator('.resource-breadcrumb'),
+    page.getByPlaceholder('Buscar subscription'),
+    page.getByRole('option', { name: /retry-worker-01/i })
+  ])
+  await electronApp.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]?.setSize(375, 812)
+  })
+  await page.getByRole('button', { name: 'Activar tema oscuro' }).click()
+  await capture(page, 'resource-explorer-04-mobile-dark.png', [
+    page.getByPlaceholder('Buscar subscription'),
+    page.getByRole('option', { name: /retry-worker-01/i }),
+    page.locator('.resource-paginator')
   ])
 } finally {
   await electronApp?.close()

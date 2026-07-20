@@ -7,7 +7,8 @@ The application is intended for SRE operators, platform teams, and developers wh
 ## Features
 
 - Connection-oriented Dashboard that remains usable with large namespaces.
-- Virtualized, keyboard-first search across hundreds of queues and topics.
+- Progressive, paginated catalogs for hundreds or thousands of queues and topics.
+- Keyboard-first local search with exact, prefix, substring, accent-insensitive, and typo-tolerant matching.
 - Hierarchical Azure exploration with queues, topics, and lazy-loaded subscriptions.
 - Namespace profiles that expose every authorized resource without one profile per queue.
 - Manual entry when a broker does not allow discovery or RabbitMQ Management API is unavailable.
@@ -51,7 +52,7 @@ Follow the [User guide](docs/user-guide.md) for a complete walkthrough of every 
 
 ## Local broker lab
 
-The lab starts RabbitMQ with the Management Plugin and Kafka in KRaft mode, creates the expected sources, and publishes test messages:
+The lab starts RabbitMQ with the Management Plugin and Kafka in KRaft mode, creates the expected sources, provisions 125 additional RabbitMQ catalog queues, and publishes test messages:
 
 ```powershell
 pnpm lab:up

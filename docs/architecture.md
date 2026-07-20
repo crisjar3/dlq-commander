@@ -77,7 +77,7 @@ sequenceDiagram
 
 ## Discovery before persistence
 
-`BrokerDiscoveryService` operates before persistence and through saved namespace profiles. It receives credentials only in main-process memory, applies a uniform 15-second timeout, and returns normalized entities with a stable key, structured kind, parent, counts, and operation capabilities.
+`BrokerDiscoveryService` operates before persistence and through saved namespace profiles. It receives credentials only in main-process memory and returns normalized entities with a stable key, structured kind, parent, status, metrics, and operation capabilities. The 15-second timeout applies to each page, not the complete namespace.
 
 ```mermaid
 flowchart TD
@@ -87,18 +87,22 @@ flowchart TD
     C -->|"Kafka"| E["Admin listTopics"]
     C -->|"Azure root"| F["List queue and topic runtime properties"]
     C -->|"Azure topic"| L["List subscription runtime properties"]
-    D --> G["Normalize queues and counts"]
-    E --> H["Exclude internal topics"]
+    D --> G["Normalize page and metrics"]
+    E --> H["Cache topics and expose pages"]
     F --> G
     L --> G
-    G --> I["Prioritize DLQ/DLT candidates"]
+    G --> I["Validate opaque next cursor"]
     H --> I
-    I --> J["Search namespace preview"]
-    J --> K["Save namespace and encrypted secret"]
+    I --> J["Merge and deduplicate by entity key"]
+    J --> N["Update local Fuse search index"]
+    N --> O["Render a virtualized page of 50"]
+    O --> K["Save namespace after all pages load"]
     K --> M["Explore resources and choose source"]
 ```
 
 RabbitMQ sends Basic Auth in headers and encodes the virtual host. Kafka always disconnects the Admin client. Azure loads subscriptions only when a topic is opened. Credentials never appear in the response.
+
+`discoverResourcePage` serves unsaved connections and `listResourcePage` serves saved profiles. Both accept a `ResourceCollection`, an opaque cursor, and a page size constrained to 10-100. Cursors are bound to their broker and collection; a malformed, reused, or cross-collection cursor fails with a sanitized error. `discoverEntities` and `listResources` remain aggregate compatibility methods that traverse every page.
 
 `BrokerResourceRef` avoids parsing ambiguous names. A queue and topic contain `kind` and `name`; a subscription also contains `topicName`. Azure topics can be navigation containers and destinations while their subscriptions are inspectable sources.
 
@@ -106,7 +110,9 @@ RabbitMQ sends Basic Auth in headers and encodes the virtual host. Kafka always 
 
 `BrokerRegistry` creates and retains one adapter per profile. Every adapter produces `SourceSummary` and `NormalizedMessage` values, allowing the UI to reuse one table and details panel even though native read semantics differ.
 
-Saved namespace resources are cached for 60 seconds by profile and scope. Azure root and per-topic subscription scopes use different keys. Explicit refresh bypasses the cache. The Inspector starts with 100 messages and increases the cumulative window by 100 up to 500; filtering runs only over the loaded normalized messages.
+Saved namespace pages are cached for 60 seconds by profile, collection, parent topic, page size, and cursor. Kafka additionally caches the single Admin topic result before slicing it into pages. Explicit refresh invalidates only the active collection and restarts at its first page. The renderer merges pages by stable entity key, preserves successful pages after an intermediate error, and builds a memoized Fuse index over loaded names and paths. Search uses no per-keystroke IPC call.
+
+The Inspector starts with 100 messages and increases the cumulative window by 100 up to 500; filtering runs only over the loaded normalized messages.
 
 - RabbitMQ receives a message and returns it with `nack(requeue=true)`.
 - Kafka reads from the beginning with an ephemeral consumer group and no commits.

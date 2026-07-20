@@ -53,7 +53,7 @@ pnpm lab:seed
 - Kafka `3.9.1` in KRaft mode with host listener `9092`;
 - an initialization container that creates `orders.events` and `orders.events.dlt`.
 
-`lab:seed` publishes 20 messages to `orders.dlq` and 20 records to `orders.events.dlt`. Running it again adds fixtures; it does not clear previous content.
+`lab:seed` ensures 125 `catalog.queue.NNN` queues, publishes 20 messages to `orders.dlq`, and publishes 20 records to `orders.events.dlt`. The catalog queues make three RabbitMQ pages available to the broker E2E suite. Running the seed again keeps those queues and adds message fixtures; it does not clear previous content.
 
 Check service health:
 
@@ -130,7 +130,7 @@ pnpm lab:seed
 pnpm docs:capture
 ```
 
-The script fixes the window at `1440x900`, uses non-sensitive data, and adds temporary numbered markers to the DOM. It does not modify application UI code or reuse local profiles. Visually review every PNG before committing it.
+The script fixes the window at `1440x900`, uses non-sensitive data, and adds temporary numbered markers to the DOM. A temporary 184-resource Demo catalog exercises pagination and tolerant search. Reproducible Azure-style topic and subscription screenshots use an in-process documentation fixture with invented names and metrics; it never contacts Azure or stores a real credential. The script does not modify application UI code or reuse local profiles. Visually review every PNG before committing it.
 
 The screenshots intentionally show the current Spanish UI. English documentation preserves literal control names so the instructions remain traceable to the product.
 

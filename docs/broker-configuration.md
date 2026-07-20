@@ -44,7 +44,7 @@ Discovery sends Basic Auth through the `Authorization` header. A user can have A
 
 ### Expected behavior
 
-The result includes every queue visible in the virtual host. DLQCommander displays the `messages` count, lists non-empty or DLQ/DLT-like queues first, and uses alphabetical order for the rest. Search is local after discovery.
+DLQCommander calls the paginated endpoint with `pagination=true`, `page_size=50`, `disable_stats=true`, and `enable_queue_totals=true`. It loads every page automatically, encodes the virtual host in the path, and sends Basic Auth only in the header. Rows expose state, total, ready, and unacknowledged counts when RabbitMQ returns them. Empty-query ordering is natural alphabetical order; search is local over every page received so far.
 
 For namespace profiles, **Probar** validates AMQP and Management API access. The selected queue becomes the operation source only when it is opened. During requeue, the operator chooses a queue destination; the application uses publisher confirms and acknowledges the original message only after a successful publish.
 
@@ -86,6 +86,8 @@ The identity or listener ACL must allow the client to:
 
 Names beginning with `__` are treated as internal and excluded from discovery. Kafka does not provide a message count during topic listing; after the profile is saved, depth is calculated from `high - low` offsets for every partition.
 
+Kafka Admin returns the topic catalog in one operation. DLQCommander caches that result for 60 seconds and serves UI pages of 50 from memory; navigating pages or typing in search does not repeat `listTopics()`.
+
 ### Expected behavior
 
 **Probar** validates the Kafka administration connection. Any visible non-internal topic can be opened. The Inspector uses an ephemeral group ID, starts at the beginning, and does not commit offsets. Requeue lets the operator search for a destination topic, publishes the key, value, and headers, adds source topic, partition, and offset references, and keeps the original record.
@@ -124,9 +126,9 @@ A `Manage` policy usually includes Listen and Send. To reduce privileges, use na
 
 ### Expected behavior
 
-Root discovery enumerates queues with `listQueuesRuntimeProperties()` and topics with `listTopicsRuntimeProperties()`. Queue rows display `deadLetterMessageCount`; topic rows display subscription count.
+Root discovery enumerates queues with `listQueuesRuntimeProperties()` and topics with `listTopicsRuntimeProperties()`. Both iterators use `byPage({ continuationToken, maxPageSize: 50 })` and load concurrently. Queue rows display total, active, dead-letter, scheduled, and size values when available. Topic rows display subscription, scheduled, and size values.
 
-Opening a topic lazily calls `listSubscriptionsRuntimeProperties(topicName)`. A subscription row represents that subscription's `$DeadLetterQueue`. Queues and subscriptions are inspectable sources. Azure topics are navigation containers and valid destinations, but they are not directly inspectable DLQs.
+Opening a topic lazily calls `listSubscriptionsRuntimeProperties(topicName)` with the same continuation-token paging. A subscription row represents that subscription's `$DeadLetterQueue` and displays total, active, and DLQ counts. Queues and subscriptions are inspectable sources. Azure topics are navigation containers and valid destinations, but they are not directly inspectable DLQs.
 
 **Probar** validates namespace administration access. Inspection peeks without locking, completing, or removing messages. Requeue receives from the queue or subscription DLQ in peek-lock mode, sends to the chosen queue or topic, and completes the original only after a successful send.
 

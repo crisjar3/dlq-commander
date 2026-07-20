@@ -19,7 +19,7 @@ DLQCommander provides a shared user experience, but it does not treat every brok
 
 ### Discovery
 
-The Management HTTP API lists every queue visible in the virtual host. DLQCommander uses `messages` as the count, lists queues with messages or DLQ/DLT-like names first, and does not hide the rest. The AMQP port cannot provide this discovery; the HTTP API must be reachable separately.
+The Management HTTP API lists every queue visible in the virtual host in pages of 50. DLQCommander normalizes total, ready, and unacknowledged counts and uses natural alphabetical order when no search is active. The AMQP port cannot provide this discovery; the HTTP API must be reachable separately.
 
 ### Inspection
 
@@ -37,7 +37,7 @@ The result reduces the source and adds the message to the target, subject to ind
 
 ### Discovery
 
-Kafka Admin lists topics and excludes internal names beginning with `__`. The protocol does not return a per-topic message count during this operation, so discovery displays an unknown count. DLQ/DLT-like names are listed first.
+Kafka Admin lists topics once per 60-second catalog cache and excludes internal names beginning with `__`. The protocol does not return a per-topic message count during this operation, so discovery displays an unknown count. DLQCommander serves the cached result in alphabetic pages of 50.
 
 ### Inspection
 
@@ -62,7 +62,7 @@ Current profiles support PLAINTEXT; TLS and SASL are not exposed in the UI.
 
 ### Discovery and depth
 
-`ServiceBusAdministrationClient` enumerates queue and topic runtime properties at the namespace root. Opening a topic lazily enumerates its subscription runtime properties. Queue and subscription rows use `deadLetterMessageCount`. These administration calls require `Manage` permission.
+`ServiceBusAdministrationClient` enumerates queue and topic runtime properties concurrently at the namespace root through continuation-token pages. Opening a topic lazily enumerates its subscription runtime properties with a separate page cache. Queue and subscription rows use `deadLetterMessageCount` and expose available total and active metrics. These administration calls require `Manage` permission.
 
 Queue sources open the queue `$DeadLetterQueue`; subscription sources open the subscription `$DeadLetterQueue` with both topic and subscription names. Azure topics have no directly inspectable DLQ in this model and are used as subscription containers or destinations.
 

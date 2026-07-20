@@ -9,7 +9,7 @@ The test strategy combines isolated rules, adapters against real brokers, and co
 | Documentation | `pnpm docs:check` | Local links and resources exist, and every image has alt text |
 | Types | `pnpm typecheck` | Main, preload, shared, and renderer satisfy strict TypeScript |
 | Lint | `pnpm lint` | No errors or warnings; renderer import boundaries remain intact |
-| Unit | `pnpm test` | Schemas, discovery, vault, jobs, persistence, and isolated adapters pass |
+| Unit | `pnpm test` | Schemas, cursors, page mapping, search ranking, pagination, discovery, vault, jobs, persistence, and isolated adapters pass |
 | Integration | `pnpm test:integration` | RabbitMQ and Kafka connect, inspect, and deliver to targets; Azure discovery runs only with its local variable |
 | Demo E2E | `pnpm test:e2e` | Electron opens, renderer is isolated, themes persist, and requeue is audited |
 | Broker E2E | `pnpm test:e2e:brokers` | Electron discovers resources, saves profiles, and tests real RabbitMQ/Kafka connections |
@@ -39,7 +39,7 @@ The integration suite:
 5. consumes from `orders` and compares body and headers;
 6. passes when the message appears in the target without an AMQP exception.
 
-The discovery suite verifies that the Management API returns `orders` and `orders.dlq`. The additional E2E test completes the React form, searches the namespace preview, invalidates results after a virtual-host change, saves an encrypted namespace profile, opens Resource Explorer, and runs **Probar**.
+The seed creates more than 100 queues. Discovery verifies `orders` and `orders.dlq`; broker E2E additionally requests two explicit 50-row pages and verifies the reported total is greater than 100. The React flow searches beyond the alphabetic first page, invalidates results after a virtual-host change, saves an encrypted namespace profile, opens Resource Explorer, and runs **Probar**.
 
 ## Real Kafka
 
@@ -87,6 +87,7 @@ Never use production as an automated fixture.
 Each test creates a temporary `userData` directory and launches the compiled application. The suite confirms:
 
 - visible Dashboard connection and searchable Demo resources;
+- automatic loading, paging, typo-tolerant search, and bounded DOM rendering with 2,000 Demo resources;
 - absence of `require` and `process` in the renderer;
 - persistence of Light, Dark, and System themes;
 - message selection, requeue confirmation, and terminal progress;
@@ -99,6 +100,7 @@ The temporary directory is deleted when Electron closes.
 The suite keeps one Electron instance for all scenarios and uses temporary `userData`. It validates:
 
 - RabbitMQ and Kafka discovery through IPC;
+- two RabbitMQ catalog pages and a namespace total greater than 100;
 - persistence, testing, and source listing against real brokers;
 - RabbitMQ namespace creation from the searchable resource preview;
 - stale state after connection details change;
